@@ -1,1 +1,7 @@
-
+torch
+torchvision
+numpy
+tqdm
+requests
+Pillow
+git+https://github.com/facebookresearch/segment-anything.git

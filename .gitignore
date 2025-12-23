@@ -174,4 +174,9 @@ cython_debug/
 .pypirc
 
 # Dataset
-dataset/
+dataset/*
+!dataset/.gitkeep
+
+# Checkpoints e modelli scaricati
+checkpoints/
+models/*.pth
