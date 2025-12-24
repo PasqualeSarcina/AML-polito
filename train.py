@@ -7,16 +7,17 @@ from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
 from segment_anything import sam_model_registry
 
-from models.setup import DenseCrossEntropyLoss, configure_model
+from models.setup import DenseCrossEntropyLoss, configure_model, get_grouped_params
 from utils.geometry import extract_features
 from utils.common import download_sam_model
 from data.dataset import SPairDataset
 
 
-def train_finetune(model, train_loader, epochs=1, lr=1e-5, accumulation_steps=4):
+def train_finetune(model, train_loader, epochs=1, lr=5e-5, accumulation_steps=4):
     
-    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=lr, weight_decay=0.01)
-    criterion = DenseCrossEntropyLoss(temperature=0.01)
+    params = get_grouped_params(model, base_lr=lr, weight_decay=0.05, decay_factor=0.8)
+    optimizer = optim.AdamW(params)
+    criterion = DenseCrossEntropyLoss(temperature=0.1)
     model.train() 
     scaler = GradScaler()
 
@@ -112,7 +113,7 @@ if __name__ == "__main__":
     print(f"\n\n{'#'*60}")
     print(f"🧪 ESPERIMENTO: Fine-tuning ultimi {n_layers} layer")
     print(f"{'#'*60}")
-    sam_tuned = train_finetune(sam, train_dataloader, epochs=1, lr=1e-5, accumulation_steps=4)
+    sam_tuned = train_finetune(sam, train_dataloader, epochs=1, lr=5e-5, accumulation_steps=4)
 
     # SALVA IL MODELLO FINALE
     model_name = f'sam_tuned_{n_layers}layer.pth'
