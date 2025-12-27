@@ -16,7 +16,7 @@ from data.dataset import SPairDataset
 # TRAINING LOOP
 # ==========================================
 def train_finetune(model, train_loader, val_loader, save_dir, n_layers, epochs=10, lr=1e-5, accumulation_steps=4):
-    
+    scaler = GradScaler()
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
     criterion = DenseCrossEntropyLoss(temperature=0.1)
     model.train() 
@@ -41,20 +41,19 @@ def train_finetune(model, train_loader, val_loader, save_dir, n_layers, epochs=1
                 kps_mask = batch['kps_valid'].to(device)
                 
                 # Forward usando extract_features (con gradienti!)
-                feats_src = extract_features(model, src)
-                feats_trg = extract_features(model, trg)
-
-                loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
-                
-                # Normalizza la loss per il numero di step accumulati
-                loss = loss / accumulation_steps
+                with autocast():
+                    feats_src = extract_features(model, src)
+                    feats_trg = extract_features(model, trg)
+                    loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
+                    loss = loss / accumulation_steps
 
                 if loss.item() > 0:
-                    loss.backward() #accumula il gradiente (non azzeriamo ancora)
+                    scaler.scale(loss).backward() #accumula il gradiente (non azzeriamo ancora)
 
                     # Facciamo lo step solo ogni N passaggi
                     if (i + 1) % accumulation_steps == 0:
-                        optimizer.step()
+                        scaler.step(optimizer)
+                        scaler.update()
                         optimizer.zero_grad() #solo a questo punto azzeriamo i gradienti
 
                     # Moltiplichiamo per accumulation_steps solo per la stampa a video (per vedere la loss reale)
