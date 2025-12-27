@@ -71,23 +71,24 @@ def train_finetune(model, train_loader, val_loader, save_dir, n_layers, epochs=1
                     raise e # Se è un altro errore, fermati
         
         avg_train_loss = train_loss / max(steps, 1)
+
         model.eval()
         val_loss = 0
         val_steps = 0
+        torch.cuda.empty_cache()
+
         with torch.no_grad(): # Niente gradienti qui, risparmia memoria
-            # Usiamo test_dataloader come validation
-            # Nota: tqdm qui è opzionale se vuoi pulizia
             for batch in tqdm(val_loader, desc=f"Epoch {epoch+1} [VAL]"):                
                 src = batch['src_img'].to(device)
                 trg = batch['trg_img'].to(device)
                 kps_src = batch['src_kps'].to(device)
                 kps_trg = batch['trg_kps'].to(device)
                 kps_mask = batch['kps_valid'].to(device)
-                
-                feats_src = model.image_encoder(src)
-                feats_trg = model.image_encoder(trg)
-                
-                loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
+
+                with autocast():
+                    feats_src = model.image_encoder(src)
+                    feats_trg = model.image_encoder(trg)
+                    loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
                 
                 if loss.item() > 0:
                     val_loss += loss.item()
