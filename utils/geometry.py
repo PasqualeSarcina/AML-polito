@@ -7,12 +7,7 @@ def extract_features(model, img_tensor, model_type='sam'):
     Gestisce la differenza tra SAM e altri modelli.
     """
     if model_type == 'sam':
-        if img_tensor.shape[-2:] != (1024, 1024):
-            input_sam = F.interpolate(img_tensor, size=(1024, 1024), mode='bilinear', align_corners=False)
-        else:
-            input_sam = img_tensor
-
-        features = model.image_encoder(input_sam)
+        features = model.image_encoder(img_tensor)
     else:
         features = model.forward_features(img_tensor)['x_norm_patchtokens']
         pass

@@ -12,23 +12,25 @@ from utils.geometry import extract_features
 from utils.common import download_sam_model
 from data.dataset import SPairDataset
 
-
-def train_finetune(model, train_loader, epochs=1, lr=5e-5, accumulation_steps=4):
+# ==========================================
+# TRAINING LOOP
+# ==========================================
+def train_finetune(model, train_loader, val_loader, save_dir, n_layers, epochs=10, lr=1e-5, accumulation_steps=4):
     
-    params = get_grouped_params(model, base_lr=lr, weight_decay=0.05, decay_factor=0.8)
-    optimizer = optim.AdamW(params)
+    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
     criterion = DenseCrossEntropyLoss(temperature=0.1)
     model.train() 
-    scaler = GradScaler()
+    
+    best_val_loss = float('inf') #TENIAMO TRACCIA DEL MIGLIOR MODELLO
 
-    print(f"🚀 Inizio Training per {epochs} epoche con Mixed Precision...") 
-
+    print(f"🚀 Inizio Training per {epochs} epoche...")
+    
     for epoch in range(epochs):
-        epoch_loss = 0
+        train_loss = 0
         steps = 0
         optimizer.zero_grad()
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
-        
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1} [TRAIN]")       
+
         for i, batch in enumerate(pbar):
             try:
                 # Sposta su GPU
@@ -38,51 +40,78 @@ def train_finetune(model, train_loader, epochs=1, lr=5e-5, accumulation_steps=4)
                 kps_trg = batch['trg_kps'].to(device)
                 kps_mask = batch['kps_valid'].to(device)
                 
-                # --- MIXED PRECISION CONTEXT ---
-                # Eseguiamo il forward pass in float16 dove possibile per risparmiare VRAM
-                with autocast():
-                    # Forward usando extract_features (con gradienti!)
-                    feats_src = extract_features(model, src)
-                    feats_trg = extract_features(model, trg)
+                # Forward usando extract_features (con gradienti!)
+                feats_src = extract_features(model, src)
+                feats_trg = extract_features(model, trg)
 
-                    loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
-                    loss = loss / accumulation_steps
+                loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
+                
+                # Normalizza la loss per il numero di step accumulati
+                loss = loss / accumulation_steps
 
-                # --- BACKPROPAGATION SCALATA ---
                 if loss.item() > 0:
-                    scaler.scale(loss).backward()   
+                    loss.backward() #accumula il gradiente (non azzeriamo ancora)
 
+                    # Facciamo lo step solo ogni N passaggi
                     if (i + 1) % accumulation_steps == 0:
-                        # Unscale gradienti prima di step (opzionale ma consigliato per clipping)
-                        scaler.unscale_(optimizer)
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                        
-                        scaler.step(optimizer)
-                        scaler.update()
-                        optimizer.zero_grad()
-                # ----------------------------------
+                        optimizer.step()
+                        optimizer.zero_grad() #solo a questo punto azzeriamo i gradienti
 
+                    # Moltiplichiamo per accumulation_steps solo per la stampa a video (per vedere la loss reale)
                     current_loss = loss.item() * accumulation_steps
-                    epoch_loss += current_loss
+                    train_loss += current_loss
                     steps += 1
-                    pbar.set_postfix({'loss': epoch_loss / max(steps, 1)})
+                    pbar.set_postfix({'loss': train_loss / max(steps, 1)})
                     
             except RuntimeError as e:
                 if "out of memory" in str(e):
-                    print(f"| OOM |", end="") # Stampa discreta
-                    for p in model.parameters():
-                        if p.grad is not None:
-                            del p.grad  # Libera grafi
+                    print(f"\n⚠️ OOM/CUDA Error. Salto batch e svuoto cache.")
                     torch.cuda.empty_cache()
-                    optimizer.zero_grad()
                     continue
                 else:
-                    raise e
-            
-            # Pulizia aggressiva
-            del src, trg, feats_src, feats_trg, loss
-            
-    return model
+                    raise e # Se è un altro errore, fermati
+        
+        avg_train_loss = train_loss / max(steps, 1)
+        model.eval()
+        val_loss = 0
+        val_steps = 0
+        with torch.no_grad(): # Niente gradienti qui, risparmia memoria
+            # Usiamo test_dataloader come validation
+            # Nota: tqdm qui è opzionale se vuoi pulizia
+            for batch in tqdm(val_loader, desc=f"Epoch {epoch+1} [VAL]"):                
+                src = batch['src_img'].to(device)
+                trg = batch['trg_img'].to(device)
+                kps_src = batch['src_kps'].to(device)
+                kps_trg = batch['trg_kps'].to(device)
+                kps_mask = batch['kps_valid'].to(device)
+                
+                feats_src = model.image_encoder(src)
+                feats_trg = model.image_encoder(trg)
+                
+                loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
+                
+                if loss.item() > 0:
+                    val_loss += loss.item()
+                    val_steps += 1
+        
+        avg_val_loss = val_loss / max(val_steps, 1)
+
+        # --- STAMPA E SALVATAGGIO ---
+        print(f"\n✅ EPOCA {epoch+1} COMPLETATA:")
+        print(f"   📉 Training Loss:   {avg_train_loss:.4f}")
+        print(f"   📊 Validation Loss: {avg_val_loss:.4f}")
+        
+        # Logica di salvataggio
+        # 1. Salva il modello corrente (sovrascrive 'latest')
+        torch.save(model.state_dict(), os.path.join(save_dir, "sam_latest.pth"))
+        
+        # 2. Salva SE è il migliore finora
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            torch.save(model.state_dict(), os.path.join(save_dir, f"{n_layers}layer_sam_BEST_{epoch}epochs.pth"))
+            print("   🏆 Trovato nuovo miglior modello! Salvato.")
+        
+        print("-" * 60)
 
 if __name__ == "__main__":
     # SETUP PATHS
@@ -98,7 +127,8 @@ if __name__ == "__main__":
     sam.to(device)
 
     # CONFIGURA MODELLO PER FINETUNING
-    n_layers = 1  
+    n_layers = 1
+    n_epochs = 10  
     configure_model(sam, unfreeze_last_n_layers=n_layers)
 
     # DATASET E DATALOADER
@@ -107,16 +137,15 @@ if __name__ == "__main__":
     image_path = os.path.join(dataset_root, 'JPEGImages')
     
     train_dataset = SPairDataset(pair_ann_path, layout_path, image_path, dataset_size='large', pck_alpha=0.1, datatype='trn')
-    train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True, num_workers=0)
+    train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True, num_workers=4)
+    print(f"Dataset Training caricato: {len(train_dataset)} coppie.")
+
+    val_dataset = SPairDataset(pair_ann_path, layout_path, image_path, dataset_size='large', pck_alpha=0.1, datatype='val')
+    val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4)
+    print(f"Dataset Validation caricato: {len(val_dataset)} coppie.")
 
     # AVVIO TRAINING
     print(f"\n\n{'#'*60}")
     print(f"🧪 ESPERIMENTO: Fine-tuning ultimi {n_layers} layer")
     print(f"{'#'*60}")
-    sam_tuned = train_finetune(sam, train_dataloader, epochs=1, lr=5e-5, accumulation_steps=4)
-
-    # SALVA IL MODELLO FINALE
-    model_name = f'sam_tuned_{n_layers}layer.pth'
-    save_path = os.path.join(checkpoint_dir, model_name)
-    torch.save(sam_tuned.state_dict(), save_path)
-    print(f"💾 Modello salvato con successo in: {save_path}")
+    train_finetune(sam, train_dataloader, val_dataloader, checkpoint_dir, n_layers, n_epochs, lr=1e-5, accumulation_steps=4)

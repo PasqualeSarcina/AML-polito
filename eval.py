@@ -180,7 +180,7 @@ if __name__ == "__main__":
     image_path = os.path.join(dataset_root, 'JPEGImages')
     
     test_dataset = SPairDataset(pair_ann_path, layout_path, image_path, dataset_size='large', pck_alpha=0.1, datatype='test')
-    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=4)
 
     #LOAD MODEL
     base_ckpt = download_sam_model(checkpoint_dir)
