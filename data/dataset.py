@@ -20,7 +20,7 @@ def get_pckthres(bb_annotation, alpha: float):
 class CorrespondenceDataset(Dataset):
     r""" Parent class of PFPascal, PFWillow, and SPair """
 
-    def __init__(self, dataset: str, split: str, dataset_dir: str):
+    def __init__(self, dataset: str, datatype: str):
         '''
         dataset: pfwillow, pfpascal, spair.
         img_size: image will be resized to this size。
@@ -31,9 +31,7 @@ class CorrespondenceDataset(Dataset):
         """ CorrespondenceDataset constructor """
         super().__init__()
         self.dataset = dataset
-        self.img_path = None
-        self.split = split
-        self.dataset_dir = dataset_dir
+        self.datatype = datatype
         self.ann_files = None
 
     def __len__(self):
@@ -51,8 +49,14 @@ class CorrespondenceDataset(Dataset):
         batch['category'] = annotation['category']
 
         # Image as tensor
-        batch['src_img'] = self.get_image(annotation['src_imname'])
-        batch['trg_img'] = self.get_image(annotation['trg_imname'])
+        src_img = self.get_image(annotation["src_imname"], category=annotation["category"])
+        trg_img = self.get_image(annotation["trg_imname"], category=annotation["category"])
+
+        batch['src_img'] = src_img
+        batch['trg_img'] = trg_img
+
+        batch['src_imsize'] = src_img.size()
+        batch['trg_imsize'] = trg_img.size()
 
         # Key-points
         batch['src_kps'] = torch.tensor(annotation['src_kps'], dtype=torch.float32)
@@ -64,10 +68,12 @@ class CorrespondenceDataset(Dataset):
 
         return batch
 
-    def get_image(self, imname):
-        r""" Reads PIL image from path """
-        path = os.path.join(self.img_path, imname)
+    def get_image(self, imname: str, category: str | None = None):
+        path = self.build_image_path(imname, category)
         arr = np.array(Image.open(path).convert("RGB"), dtype=np.float32)
-        img = torch.from_numpy(arr).permute(2, 0, 1)  # C,H,W
-        return img
+        return torch.from_numpy(arr).permute(2, 0, 1)
+
+    def build_image_path(self, imname: str, category: str | None = None) -> str:
+        """Hook: la sottoclasse decide dove si trova l'immagine."""
+        raise NotImplementedError
 
