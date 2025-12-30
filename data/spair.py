@@ -27,5 +27,5 @@ class SPairDataset(CorrespondenceDataset):
 
     def build_image_path(self, imname, category=None):
         if category is None:
-            raise ValueError("SPair richiede la categoria per costruire il path immagine.")
+            raise ValueError("SPair requires the category to build the image path.")
         return os.path.join(self.spair_dir, "JPEGImages", category, imname)
