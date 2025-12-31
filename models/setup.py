@@ -33,66 +33,59 @@ class DenseCrossEntropyLoss(nn.Module):
         self.temperature = temperature
         self.criterion = nn.CrossEntropyLoss()
 
+    # NUOVA IMPLEMENTAZIONE CONSIGLIATA (in setup.py)
     def forward(self, feats_src, feats_trg, kps_src, kps_trg, kps_mask):
-        """
-        feats: (B, 256, 64, 64)
-        kps: (B, N, 2) in coordinate immagine originale
-        kps_mask: (B, N) booleani (True se visibile)
-        """
-        device = feats_src.device
         B, C, Hf, Wf = feats_src.shape
-        loss_total = torch.tensor(0.0, device=device, requires_grad=True)
-        valid_samples = 0
+        # SAM scala l'immagine di 1024 a feature map di 64, quindi stride=16
+        STRIDE = 16 
         
-        # Normalizziamo le feature map globalmente (importante per dot product)
+        # 1. Normalizziamo le feature map (già presente nel tuo codice, ottimo)
         feats_src = F.normalize(feats_src, dim=1)
         feats_trg = F.normalize(feats_trg, dim=1)
+        
+        loss_total = 0.0
+        valid_samples = 0
 
         for b in range(B):
-            # Filtriamo solo i keypoint validi usando la maschera
             mask = kps_mask[b]
             if mask.sum() == 0: continue
 
-            valid_kps_src = kps_src[b][mask]
+            # Prendiamo i keypoint validi
+            valid_kps_src = kps_src[b][mask].unsqueeze(0).unsqueeze(2) # (1, N, 1, 2)
+            
+            # --- ESTRAZIONE SORGENTE CON GRID_SAMPLE ---
+            # Normalizziamo le coordinate tra -1 e 1 per grid_sample
+            # Nota: grid_sample vuole (x, y). Assicurati che kps siano (x, y).
+            # H_img = Hf * STRIDE, W_img = Wf * STRIDE
+            
+            # Normalizzazione: 2 * (coord / (size-1)) - 1
+            grid_src = torch.zeros_like(valid_kps_src)
+            grid_src[..., 0] = 2 * (valid_kps_src[..., 0] / (Wf * STRIDE - 1)) - 1
+            grid_src[..., 1] = 2 * (valid_kps_src[..., 1] / (Hf * STRIDE - 1)) - 1
+            
+            # Estraiamo i vettori interpolati (B, C, N, 1) -> (N, C)
+            # align_corners=True è standard per SAM
+            query_feats = F.grid_sample(feats_src[b:b+1], grid_src, align_corners=True, mode='bilinear')
+            query_feats = query_feats.squeeze(0).squeeze(2).permute(1, 0) # (N, C)
+
+            # --- TARGET (Ground Truth) ---
             valid_kps_trg = kps_trg[b][mask]
+            
+            # Flatten target map per la cross entropy
+            trg_flat = feats_trg[b].view(C, -1) # (C, H*W)
+            
+            # Calcolo Logits (Similarità)
+            logits = torch.mm(query_feats, trg_flat) / self.temperature # (N, 4096)
+            
+            # Creiamo gli indici target corretti
+            fx_trg = (valid_kps_trg[:, 0] / STRIDE).round().long().clamp(0, Wf-1)
+            fy_trg = (valid_kps_trg[:, 1] / STRIDE).round().long().clamp(0, Hf-1)
+            target_indices = fy_trg * Wf + fx_trg
+            
+            loss_total += self.criterion(logits, target_indices)
+            valid_samples += 1
 
-            # Flatten target map: (256, 64, 64) -> (256, 4096)
-            trg_flat = feats_trg[b].view(C, -1) 
-
-            # Per ogni keypoint valido
-            for i in range(len(valid_kps_src)):
-                # --- SORGENTE ---
-                # Mappiamo coordinate immagine -> coordinate feature (64x64)
-                # SAM scala 1024 -> 64, quindi fattore 16
-                sx, sy = valid_kps_src[i]
-                fx_src = int(sx / 16)
-                fy_src = int(sy / 16)
-                
-                # Clamp per sicurezza (non uscire dalla mappa 64x64)
-                fx_src = min(max(fx_src, 0), Wf - 1)
-                fy_src = min(max(fy_src, 0), Hf - 1)
-
-                # Estraiamo il vettore sorgente (query)
-                query_vec = feats_src[b, :, fy_src, fx_src].unsqueeze(0) # (1, 256)
-
-                # --- TARGET (Ground Truth) ---
-                tx, ty = valid_kps_trg[i]
-                fx_trg = int(tx / 16)
-                fy_trg = int(ty / 16)
-                fx_trg = min(max(fx_trg, 0), Wf - 1)
-                fy_trg = min(max(fy_trg, 0), Hf - 1)
-
-                # Calcoliamo l'indice piatto (0-4095) che rappresenta la risposta corretta
-                target_idx = fy_trg * Wf + fx_trg
-                target_tensor = torch.tensor([target_idx], device=device)
-
-                # --- CALCOLO LOSS ---
-                # Similarità con TUTTI i 4096 pixel target
-                logits = torch.mm(query_vec, trg_flat) / self.temperature # (1, 4096)
-                
-                loss_total = loss_total + self.criterion(logits, target_tensor)
-                valid_samples += 1
-                
         if valid_samples > 0:
-            loss_total = loss_total / valid_samples
-        return loss_total
+            return loss_total / valid_samples
+        else:
+            return torch.tensor(0.0, device=feats_src.device, requires_grad=True)

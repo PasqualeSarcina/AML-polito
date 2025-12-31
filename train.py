@@ -7,7 +7,7 @@ from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
 from segment_anything import sam_model_registry
 
-from models.setup import DenseCrossEntropyLoss, configure_model, get_grouped_params
+from models.setup import DenseCrossEntropyLoss, configure_model
 from utils.geometry import extract_features
 from utils.common import download_sam_model
 from data.dataset import SPairDataset
@@ -18,6 +18,13 @@ from data.dataset import SPairDataset
 def train_finetune(model, train_loader, val_loader, save_dir, n_layers, epochs=10, lr=1e-5, accumulation_steps=4):
     scaler = GradScaler()
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, 
+        max_lr=1e-4, # Puoi osare un LR più alto con LoRA e OneCycle
+        steps_per_epoch=len(train_loader),
+        epochs=epochs,
+        pct_start=0.1 # 10% di warmup
+    )
     criterion = DenseCrossEntropyLoss(temperature=0.1)
     model.train() 
     
@@ -55,6 +62,7 @@ def train_finetune(model, train_loader, val_loader, save_dir, n_layers, epochs=1
                         scaler.step(optimizer)
                         scaler.update()
                         optimizer.zero_grad() #solo a questo punto azzeriamo i gradienti
+                        scheduler.step()
 
                     # Moltiplichiamo per accumulation_steps solo per la stampa a video (per vedere la loss reale)
                     current_loss = loss.item() * accumulation_steps
