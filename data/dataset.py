@@ -20,7 +20,7 @@ def get_pckthres(bb_annotation, alpha: float):
 class CorrespondenceDataset(Dataset):
     r""" Parent class of PFPascal, PFWillow, and SPair """
 
-    def __init__(self, dataset: str, datatype: str):
+    def __init__(self, dataset: str, datatype: str, transform = None):
         '''
         dataset: pfwillow, pfpascal, spair.
         img_size: image will be resized to this size。
@@ -33,6 +33,7 @@ class CorrespondenceDataset(Dataset):
         self.dataset = dataset
         self.datatype = datatype
         self.ann_files = None
+        self.transform = None
 
     def __len__(self):
         r""" Returns the number of pairs """
@@ -43,37 +44,45 @@ class CorrespondenceDataset(Dataset):
         annotation = self.load_annotation(idx)
 
         # Image name
-        batch = dict()
+        sample = dict()
 
         # Object category
-        batch['category'] = annotation['category']
+        sample['category'] = annotation['category']
 
         # Image as tensor
         src_img = self.get_image(annotation["src_imname"], category=annotation["category"])
         trg_img = self.get_image(annotation["trg_imname"], category=annotation["category"])
 
-        batch['src_img'] = src_img
-        batch['trg_img'] = trg_img
+        sample['src_img'] = src_img
+        sample['trg_img'] = trg_img
 
-        batch['src_imsize'] = src_img.size()
-        batch['trg_imsize'] = trg_img.size()
+        sample['src_imsize'] = src_img.size()
+        sample['trg_imsize'] = trg_img.size()
 
         # Key-points
-        batch['src_kps'] = torch.tensor(annotation['src_kps'], dtype=torch.float32)
-        batch['trg_kps'] = torch.tensor(annotation['trg_kps'], dtype=torch.float32)
+        sample['src_kps'] = torch.tensor(annotation['src_kps'], dtype=torch.float32)
+        sample['trg_kps'] = torch.tensor(annotation['trg_kps'], dtype=torch.float32)
 
-        batch['pck_threshold_0_05'] = get_pckthres(annotation['trg_bndbox'], 0.05)
-        batch['pck_threshold_0_1'] = get_pckthres(annotation['trg_bndbox'], 0.1)
-        batch['pck_threshold_0_2'] = get_pckthres(annotation['trg_bndbox'], 0.2)
+        sample['pck_threshold_0_05'] = get_pckthres(annotation['trg_bndbox'], 0.05)
+        sample['pck_threshold_0_1'] = get_pckthres(annotation['trg_bndbox'], 0.1)
+        sample['pck_threshold_0_2'] = get_pckthres(annotation['trg_bndbox'], 0.2)
 
-        return batch
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
 
     def get_image(self, imname: str, category: str | None = None):
         path = self.build_image_path(imname, category)
         arr = np.array(Image.open(path).convert("RGB"), dtype=np.float32)
         return torch.from_numpy(arr).permute(2, 0, 1)
 
+
     def build_image_path(self, imname: str, category: str | None = None) -> str:
-        """Hook: la sottoclasse decide dove si trova l'immagine."""
+        """Hook: subclasses must implement this method to build image path """
+        raise NotImplementedError
+
+    def load_annotation(self, idx: int) -> dict:
+        """Hook: subclasses must implement this method to load annotation """
         raise NotImplementedError
 

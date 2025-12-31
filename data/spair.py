@@ -5,10 +5,10 @@ import os
 
 
 class SPairDataset(CorrespondenceDataset):
-    def __init__(self, dataset_size: str, dataset_dir: str, datatype: str):
+    def __init__(self, dataset_size: str, dataset_dir: str, datatype: str, transform = None):
         self.spair_dir = os.path.join(dataset_dir, 'SPair-71k')
 
-        super().__init__(dataset='spair', datatype=datatype)
+        super().__init__(dataset='spair', datatype=datatype, transform=transform)
         self.ann_files = open(
             os.path.join(self.spair_dir, 'Layout', dataset_size, self.datatype + '.txt'),
             "r").read().split('\n')

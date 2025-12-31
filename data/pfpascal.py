@@ -8,10 +8,10 @@ from data.dataset import CorrespondenceDataset
 
 
 class PFPascalDataset(CorrespondenceDataset):
-    def __init__(self, dataset_dir: str, datatype: str):
+    def __init__(self, dataset_dir: str, datatype: str, transform = None):
         self.pfpascal_dir = os.path.join(dataset_dir, 'pf-pascal')
 
-        super().__init__(dataset='pfpascal', datatype=datatype)
+        super().__init__(dataset='pfpascal', datatype=datatype, transform=transform)
 
         pairs_csv = os.path.join(self.pfpascal_dir, f"{datatype}_pairs.csv")
 

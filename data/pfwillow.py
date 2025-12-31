@@ -6,13 +6,13 @@ import numpy as np
 
 
 class PFWillowDataset(CorrespondenceDataset):
-    def __init__(self, dataset_dir: str, datatype: str):
+    def __init__(self, dataset_dir: str, datatype: str, transform = None):
         if datatype != 'test':
             raise ValueError("PF-Willow dataset only supports 'test' datatype.")
 
         self.pfwillow_dir = os.path.join(dataset_dir, 'pf-willow')
 
-        super().__init__(dataset='pfwillow', datatype=datatype)
+        super().__init__(dataset='pfwillow', datatype=datatype, transform=transform)
 
         pairs_csv = os.path.join(self.pfwillow_dir, f"{datatype}_pairs.csv")
 
