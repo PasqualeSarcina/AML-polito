@@ -10,7 +10,7 @@ from collections import defaultdict
 from data.dataset import SPairDataset
 from utils.geometry import extract_features, compute_correspondence
 from segment_anything import sam_model_registry
-from utils import download_sam_model
+from utils.common import download_sam_model
 
 @torch.no_grad()
 def evaluate_pck(model, dataloader, device, alpha=0.1):
