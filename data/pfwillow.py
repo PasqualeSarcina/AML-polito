@@ -49,6 +49,7 @@ class PFWillowDataset(CorrespondenceDataset):
         trg_bbox = np.array([xmin, ymin, xmax, ymax], dtype=np.float32)
 
         return {
+            "pair_id": idx,
             "category": category,
             "src_imname": src_imname,
             "trg_imname": trg_imname,

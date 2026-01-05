@@ -44,6 +44,7 @@ class PFPascalDataset(CorrespondenceDataset):
         src_kps, trg_kps = self.filter_valid_keypoints(src_kps, trg_kps)
 
         annotation = {
+            "pair_id": idx,
             "src_imname": src_imname,
             "trg_imname": trg_imname,
             "category": category,

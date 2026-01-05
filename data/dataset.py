@@ -33,7 +33,7 @@ class CorrespondenceDataset(Dataset):
         self.dataset = dataset
         self.datatype = datatype
         self.ann_files = None
-        self.transform = None
+        self.transform = transform
 
     def __len__(self):
         r""" Returns the number of pairs """
@@ -45,6 +45,9 @@ class CorrespondenceDataset(Dataset):
 
         # Image name
         sample = dict()
+
+        # Pair ID
+        sample["pair_id"] = annotation["pair_id"]
 
         # Object category
         sample['category'] = annotation['category']
