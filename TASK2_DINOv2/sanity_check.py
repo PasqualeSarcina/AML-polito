@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 
 # Setup paths
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from dataset.Task2_DINOv2_dataset import SPairDataset
+from dataset.task2_DINOv2_dataset import SPairDataset
 from utils.setup_data import setup_data
 from TASK2_DINOv2.loss import InfoNCELoss  
 
