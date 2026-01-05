@@ -5,9 +5,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from dataset.Task1_DINOv2_dataset import SPairDataset  
-
 from utils.setup_data import setup_data
-from dataset.Task1_DINOv2_dataset import SPairDataset
 
 # --- Helper for Model Inference ---
 def pad_to_multiple(x, k=14):

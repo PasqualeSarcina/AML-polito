@@ -7,7 +7,7 @@ from PIL import Image
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-# --- 1. Define the Augmentation Pipeline ---
+
 def get_transforms(mode='train', img_size=518):
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
@@ -36,13 +36,8 @@ def get_transforms(mode='train', img_size=518):
 
 # --- 2. Simple Image Reader ---
 def read_img(path):
-    # Keep as HWC (Standard for Albumentations)
-    try:
-        img = np.array(Image.open(path).convert('RGB'))
-        return img
-    except Exception as e:
-        print(f"Error reading {path}: {e}")
-        return np.zeros((518, 518, 3), dtype=np.uint8)
+    img = np.array(Image.open(path).convert('RGB'))
+    return img
 
 class SPairDataset(Dataset):
     def __init__(self, pair_ann_path, layout_path, image_path, dataset_size, pck_alpha, datatype):
@@ -129,7 +124,7 @@ class SPairDataset(Dataset):
 if __name__ == '__main__':
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(current_dir)
-    base_dir = os.path.join(project_root, 'data', 'SPair-71k_extracted', 'SPair-71k')
+    base_dir = os.path.join(project_root, 'data', 'SPair-71k_extracted', 'SPair-71k', 'SPair-71k')
     pair_ann_path = os.path.join(base_dir, 'PairAnnotation')
     layout_path = os.path.join(base_dir, 'Layout')
     image_path = os.path.join(base_dir, 'JPEGImages')
@@ -137,9 +132,10 @@ if __name__ == '__main__':
     if os.path.exists(base_dir):
         print(f"Found dataset at: {base_dir}")
         dataset = SPairDataset(pair_ann_path, layout_path, image_path, 'large', 0.05, 'trn')
-        loader = DataLoader(dataset, batch_size=4, shuffle=True)
+        loader = DataLoader(dataset, batch_size=6, shuffle=True)
         batch = next(iter(loader))
         print(f"Batch Image Shape: {batch['src_img'].shape}") # Should be [4, 3, 518, 518]
+        print(f"Batch Image Shape: {batch['trg_img'].shape}") # Should be [4, 3, 518, 518]
         print(f"Batch Keypoints: {batch['src_kps'].shape}")   # Should be [4, 40, 2]
     else:
         print(f"Path not found: {base_dir}")
