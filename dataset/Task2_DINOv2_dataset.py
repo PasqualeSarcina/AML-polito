@@ -27,6 +27,7 @@ def get_transforms(mode='train', img_size=518):
             A.Normalize(mean=mean, std=std),
             ToTensorV2(), 
         ], keypoint_params=A.KeypointParams(format='xy', remove_invisible=False))
+    
     else:
         return A.Compose([
             A.Resize(height=img_size, width=img_size),
