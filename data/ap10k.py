@@ -1,9 +1,13 @@
 import json
+import math
 import os
+import random
+
 import numpy as np
 import itertools
 
 from data.dataset import CorrespondenceDataset
+
 
 def load_jsonl_as_dict(path):
     all_annotated_images = {}
@@ -15,6 +19,7 @@ def load_jsonl_as_dict(path):
             rec = json.loads(line)
             all_annotated_images[rec["image_id"]] = rec
     return all_annotated_images
+
 
 def load_data(*file_paths):
     """Load and merge data from multiple JSON files."""
@@ -28,6 +33,7 @@ def load_data(*file_paths):
             if 'categories' in data and not merged_data['categories']:
                 merged_data['categories'] = data['categories']
     return merged_data
+
 
 def remove_duplicate_annotations(data):
     """Remove duplicate annotations from the data based on image_id."""
@@ -49,75 +55,180 @@ def match_keypoints(rec_a, rec_b):
     trg_kps = [b_map[n] for n in common]
     return src_kps, trg_kps
 
-def generate_intra_species_pairs(f, all_annotated_images, min_kps=3):
+
+def generate_intra_species_pairs(
+        f,
+        all_annotated_images,
+        min_kps=3,
+        n_multiplier=1,
+        seed=42
+):
     by_species = {}
     for rec in all_annotated_images.values():
         by_species.setdefault(rec["category"], []).append(rec)
 
-    for species, recs in by_species.items():
+    rng = random.Random(seed)
+    total_written = 0
+
+    for species in sorted(by_species.keys()):
+        recs = by_species[species]
+
+        if n_multiplier is not None:
+            target_n = n_multiplier * len(recs)
+        else:
+            target_n = math.comb(len(recs), 2)
+
+        possible_pairs = []
         for a, b in itertools.combinations(recs, 2):
             src_kps, trg_kps = match_keypoints(a, b)
             if len(src_kps) < min_kps:
                 continue
-
-            pair = {
+            possible_pairs.append({
                 "src_imname": a["file_name"],
                 "trg_imname": b["file_name"],
-                "category": species,                      # name
+                "category": species,
                 "src_kps": src_kps,
                 "trg_kps": trg_kps,
                 "src_bndbox": a["bbox"],
-                "trg_bndbox": b["bbox"]
-            }
+                "trg_bndbox": b["bbox"],
+            })
+
+        target_n = min(target_n, len(possible_pairs))
+        if target_n <= 0:
+            continue
+
+        sampled = rng.sample(possible_pairs, target_n)
+
+        for pair in sampled:
             f.write(json.dumps(pair, ensure_ascii=False) + "\n")
 
-def generate_cross_species_pairs(f, all_annotated_images, min_kps=3):
+        total_written += len(sampled)
+
+    print(f"[INTRA-SPECIES] Total pairs: {total_written}")
+
+
+def generate_cross_species_pairs(
+        f,
+        all_annotated_images,
+        min_kps=3,
+        n_pairs_per_combination=50,
+        seed=42
+):
+    rng = random.Random(seed)
+    total_written = 0
+
     fam_spec = {}
     for rec in all_annotated_images.values():
         fam = rec["supercategory"]
         spec = rec["category"]
         fam_spec.setdefault(fam, {}).setdefault(spec, []).append(rec)
 
-    for fam, spec_map in fam_spec.items():
-        specs = sorted(spec_map.keys())
-        for s1, s2 in itertools.combinations(specs, 2):
-            cat_label = "-".join(sorted([s1, s2]))  # name-name
-            for a, b in itertools.product(spec_map[s1], spec_map[s2]):
+    # ordine: supercategory
+    for fam in sorted(fam_spec.keys()):
+        spec_map = fam_spec[fam]
+        specs = sorted(spec_map.keys())  # ordine: cat_a, cat_b
+
+        if len(specs) <= 1:
+            continue
+
+        # ordine: cat_a-cat_b
+        for cat_a, cat_b in itertools.combinations(specs, 2):
+            A = spec_map[cat_a]
+            B = spec_map[cat_b]
+
+            cat_label = f"{fam}<{cat_a}-{cat_b}>"
+
+            possible = []
+            # direzione FISSA: a da cat_a (src), b da cat_b (trg)
+            for a, b in itertools.product(A, B):
                 src_kps, trg_kps = match_keypoints(a, b)
                 if len(src_kps) < min_kps:
                     continue
-                pair = {
-                    "src_imname": a["file_name"],
-                    "trg_imname": b["file_name"],
-                    "category": cat_label,                # name-name
+
+                possible.append((a, b, src_kps, trg_kps))
+
+            N = min(n_pairs_per_combination, len(possible))
+            if N <= 0:
+                continue
+
+            sampled = rng.sample(possible, N)
+
+            for a, b, src_kps, trg_kps in sampled:
+                pair_out = {
+                    "src_imname": a["file_name"],  # sempre cat_a
+                    "trg_imname": b["file_name"],  # sempre cat_b
+                    "category": cat_label,
                     "src_kps": src_kps,
                     "trg_kps": trg_kps,
                     "src_bndbox": a["bbox"],
-                    "trg_bndbox": b["bbox"]
+                    "trg_bndbox": b["bbox"],
                 }
-                f.write(json.dumps(pair, ensure_ascii=False) + "\n")
+                f.write(json.dumps(pair_out, ensure_ascii=False) + "\n")
 
-def generate_cross_family_pairs(f, all_annotated_images, min_kps=3):
+            total_written += len(sampled)
+
+    print(f"[CROSS-SPECIES] Total pairs: {total_written}")
+
+
+def generate_cross_family_pairs(
+        f,
+        all_annotated_images,
+        min_kps=3,
+        n_pairs_per_combination=20,
+        seed=42
+):
+    rng = random.Random(seed)
+    total_written = 0
+
+    # famiglia -> list[rec]
     by_family = {}
     for rec in all_annotated_images.values():
         by_family.setdefault(rec["supercategory"], []).append(rec)
 
-    for f1, f2 in itertools.combinations(by_family, 2):
-        fam_label = "-".join(sorted([f1, f2]))  # supercat-supercat
-        for a, b in itertools.product(by_family[f1], by_family[f2]):
+    # ORDINE: supercategory
+    families = sorted(by_family.keys())
+
+    # coppie di famiglie ordinate (fam1 < fam2)
+    for fam1, fam2 in itertools.combinations(families, 2):
+        A = by_family[fam1]
+        B = by_family[fam2]
+
+        # notebook: genera TUTTE le coppie tra famiglie (materializza)
+        cross_family_pairs = list(itertools.product(A, B))
+
+        # filtro richiesto: match_keypoints + min_kps
+        possible_pairs = []
+        for a, b in cross_family_pairs:
             src_kps, trg_kps = match_keypoints(a, b)
             if len(src_kps) < min_kps:
                 continue
-            pair = {
+            possible_pairs.append((a, b, src_kps, trg_kps))
+
+        # notebook: campiona con cap
+        N = min(n_pairs_per_combination, len(possible_pairs))
+        if N <= 0:
+            continue
+
+        pairs_sampled = rng.sample(possible_pairs, N)
+
+        # category = supercategoryA-supercategoryB
+        cat_label = f"{fam1} - {fam2}"
+
+        for a, b, src_kps, trg_kps in pairs_sampled:
+            pair_out = {
                 "src_imname": a["file_name"],
                 "trg_imname": b["file_name"],
-                "category": fam_label,                   # supercategory-supercategory
+                "category": cat_label,
                 "src_kps": src_kps,
                 "trg_kps": trg_kps,
                 "src_bndbox": a["bbox"],
-                "trg_bndbox": b["bbox"]
+                "trg_bndbox": b["bbox"],
             }
-            f.write(json.dumps(pair, ensure_ascii=False) + "\n")
+            f.write(json.dumps(pair_out, ensure_ascii=False) + "\n")
+
+        total_written += len(pairs_sampled)
+
+    print(f"[CROSS-FAMILY] Total pairs: {total_written}")
 
 
 class AP10KDataset(CorrespondenceDataset):
@@ -177,9 +288,9 @@ class AP10KDataset(CorrespondenceDataset):
                     kps_names = cat_meta.get("keypoints", [])
 
                     inside = (
-                        (kps[:, 0] >= x_min) & (kps[:, 0] <= x_max) &
-                        (kps[:, 1] >= y_min) & (kps[:, 1] <= y_max) &
-                        (kps[:, 2] == 2)
+                            (kps[:, 0] >= x_min) & (kps[:, 0] <= x_max) &
+                            (kps[:, 1] >= y_min) & (kps[:, 1] <= y_max) &
+                            (kps[:, 2] == 2)
                     )
 
                     filtered_named_kps = [
@@ -233,12 +344,3 @@ class AP10KDataset(CorrespondenceDataset):
 
     def build_image_path(self, imname, category=None):
         return os.path.join(self.ap10kdir, "data", imname)
-
-
-
-
-
-
-
-
-
