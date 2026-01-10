@@ -8,9 +8,10 @@ from torch.utils.data import DataLoader
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dataset.task2_DINOv2_no_regularization import SPairDataset
 from utils.setup_data import setup_data
-from TASK2_DINOv2.loss import InfoNCELoss
+from TASK2_DINOv2.Hyperparameters.loss import InfoNCELoss
 
-if __name__ == '__main__':
+def test_learning_rate(lr_to_try):
+    print(f"\n>>> TESTING LEARNING RATE: {lr_to_try} <<<")
     print("--- 1. Checking Data Availability ---")
     data_root = setup_data() 
     
@@ -60,21 +61,18 @@ if __name__ == '__main__':
     # B. Setup Optimizer (High LR, No Decay)
     # We filter specifically for parameters that require grad
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), 
-                            lr=1e-3, weight_decay=0)
+                            lr=lr_to_try, weight_decay=1e-4)
     
-   
-    batch = next(iter(trn_dataloader))
-
-    src_img = batch['src_img'].to(device)
-    trg_img = batch['trg_img'].to(device)
-    src_kps = batch['src_kps'].to(device)
-    trg_kps = batch['trg_kps'].to(device)
-    mask    = batch['valid_mask'].to(device)
-
-    epochs=100
     model.train()
     
-    for epoch in range(epochs):
+    for i, batch in enumerate(trn_dataloader):
+        if i >= 100: break
+        src_img = batch['src_img'].to(device)
+        trg_img = batch['trg_img'].to(device)
+        src_kps = batch['src_kps'].to(device)
+        trg_kps = batch['trg_kps'].to(device)
+        mask    = batch['valid_mask'].to(device)
+         
         optimizer.zero_grad()
 
         # Extract features (Inside loop because params now have requires_grad=True)
@@ -98,11 +96,12 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
-        if (epoch + 1) % 10 == 0:
-            print(f"Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.6f}")
+        if (i + 1) % 20 == 0:
+            print(f"Iteration [{i+1}/{i}], Loss: {loss.item():.4f}")
 
-    print("\n--- Overfit Check Complete ---")
-    if loss.item() < 0.1:
-        print("SUCCESS: The model successfully overfitted the sample. The pipeline is correct.")
-    else:
-        print("WARNING: Loss did not drop significantly. Check coordinate normalization or temperature.")
+if __name__ == '__main__':
+    # Define the LRs you want to test
+    lrs = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5]
+    
+    for lr in lrs:
+        test_learning_rate(lr)
