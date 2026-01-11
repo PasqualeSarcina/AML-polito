@@ -5,8 +5,8 @@ import torch.optim as optim
 import sys
 import os
 from torch.utils.data import DataLoader
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from dataset.task2_DINOv2_no_regularization import SPairDataset
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from data.task2_DINOv2_no_regularization import SPairDataset
 from utils.setup_data import setup_data
 from TASK2_DINOv2.Hyperparameters.loss import InfoNCELoss
 
@@ -40,7 +40,7 @@ def test_learning_rate(lr_to_try):
         datatype='trn'
     )
     
-    trn_dataloader = DataLoader(train_dataset, batch_size=5, num_workers=0, shuffle=False)
+    trn_dataloader = DataLoader(train_dataset, batch_size=5, num_workers=0, shuffle=True)
     print(f"Train Set Loaded: {len(train_dataset)} images.")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

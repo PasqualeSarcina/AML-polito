@@ -6,7 +6,7 @@ import sys
 import os
 from torch.utils.data import DataLoader
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from dataset.task2_DINOv2_no_regularization import SPairDataset
+from data.task2_DINOv2_no_regularization import SPairDataset
 from utils.setup_data import setup_data
 from TASK2_DINOv2.Hyperparameters.loss import InfoNCELoss
 
