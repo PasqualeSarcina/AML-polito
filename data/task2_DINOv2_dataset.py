@@ -51,7 +51,16 @@ class SPairDataset(Dataset):
         self.ann_files = open(list_file, "r").read().split('\n')
         self.ann_files = [x for x in self.ann_files if x] 
 
-        mode = 'train' if datatype == 'trn' else 'test'
+        if datatype == 'trn':
+            mode = 'train'
+        elif datatype == 'val':
+            mode = 'val'
+        elif datatype == 'test':
+            mode = 'test'
+        else:
+            raise ValueError(f"Unsupported datatype: {datatype}")
+
+
         self.transform = get_transforms(mode=mode, img_size=518)
 
     def __len__(self):
