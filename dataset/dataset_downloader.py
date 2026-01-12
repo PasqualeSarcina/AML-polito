@@ -8,7 +8,6 @@ import tempfile
 from pathlib import Path
 
 
-
 def download(url: str, out_path: Path, chunk_size: int = 1024 * 1024):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with requests.get(url, stream=True, timeout=60) as r:
@@ -16,12 +15,13 @@ def download(url: str, out_path: Path, chunk_size: int = 1024 * 1024):
         total = int(r.headers.get("content-length", 0))
 
         with open(out_path, "wb") as f, tqdm(
-            total=total, unit="B", unit_scale=True, desc=f"Downloading {out_path.name}"
+                total=total, unit="B", unit_scale=True, desc=f"Downloading {out_path.name}"
         ) as pbar:
             for chunk in r.iter_content(chunk_size=chunk_size):
                 if chunk:
                     f.write(chunk)
                     pbar.update(len(chunk))
+
 
 def extract_zip(zip_path: Path, dest_dir: Path, chunk_size: int = 1024 * 1024):
     zip_path = Path(zip_path)
@@ -48,9 +48,6 @@ def extract_zip(zip_path: Path, dest_dir: Path, chunk_size: int = 1024 * 1024):
                             break
                         dst.write(chunk)
                         pbar.update(len(chunk))
-
-
-
 
 
 def download_spair():
@@ -105,8 +102,6 @@ def download_pfwillow():
         extract_zip(tmp_zip_data, dest_dir)
 
 
-
-
 dataset_folder_path = os.path.dirname(os.path.abspath(__file__))
 
 if __name__ == "__main__":
@@ -135,11 +130,4 @@ if __name__ == "__main__":
         case _:
             print("Invalid choice. Exiting.")
 
-
     input("Press any key to exit...")
-
-
-
-
-
-
