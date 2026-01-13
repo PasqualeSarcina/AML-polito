@@ -4,6 +4,10 @@ dataset/*
 *.tar
 *.tar.gz
 
+# Ignore model checkpoints
+TASK2_DINOv2/checkpoints/
+*.pth
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

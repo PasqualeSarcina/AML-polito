@@ -7,8 +7,8 @@ def setup_data():
     project_root = os.path.dirname(current_dir)
     
     # Define paths relative to the project root
-    zip_file_path = os.path.join(project_root, 'data', 'SPair-71k.zip') 
-    extract_dir = os.path.join(project_root, 'data', 'SPair-71k_extracted')
+    zip_file_path = os.path.join(project_root, 'dataset', 'SPair-71k.zip') 
+    extract_dir = os.path.join(project_root, 'dataset', 'SPair-71k_extracted')
 
     # Create extraction directory
     os.makedirs(extract_dir, exist_ok=True)
