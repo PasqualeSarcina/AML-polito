@@ -4,6 +4,9 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from data.task1_DINOv2_dataset import SPairDataset  
 from utils.setup_data import setup_data
 
