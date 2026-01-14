@@ -9,7 +9,7 @@ from tqdm import tqdm
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from data.task2_DINOv2_dataset import SPairDataset
 from utils.setup_data import setup_data
-from TASK2_DINOv2.Hyperparameters.loss import InfoNCELoss
+from task2_dinov2.Hyperparameters.loss import InfoNCELoss
 
 def coarse_grid(lr_to_try, w_decay):
     print(f"\n{'='*60}")
