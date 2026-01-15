@@ -28,7 +28,7 @@ class CorrespondenceDataset(Dataset):
         '''
         """ CorrespondenceDataset constructor """
         super().__init__()
-        self.dataset_dir = os.path.join(os.path.dirname(Path(__file__).resolve()), '..', 'dataset')
+        self.dataset_dir = os.path.join(os.path.dirname(Path(__file__).absolute()), '..', 'dataset')
         self.dataset = dataset
         self.datatype = datatype
         self.ann_files = None
