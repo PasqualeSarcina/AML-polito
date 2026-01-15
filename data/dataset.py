@@ -1,6 +1,7 @@
 r""" Superclass for semantic correspondence datasets """
 
 import os
+from pathlib import Path
 
 from torch.ao.nn.quantized.functional import threshold
 from torch.utils.data import Dataset
@@ -27,7 +28,7 @@ class CorrespondenceDataset(Dataset):
         '''
         """ CorrespondenceDataset constructor """
         super().__init__()
-        self.dataset_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dataset')
+        self.dataset_dir = os.path.join(os.path.dirname(Path(__file__).resolve()), '..', 'dataset')
         self.dataset = dataset
         self.datatype = datatype
         self.ann_files = None
