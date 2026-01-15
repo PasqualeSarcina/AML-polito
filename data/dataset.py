@@ -27,10 +27,11 @@ class CorrespondenceDataset(Dataset):
         datatype: trn, test or val.
         '''
         """ CorrespondenceDataset constructor """
-        super().__init__()
-        self.dataset_dir = os.path.join(os.path.dirname(Path(__file__).absolute()), '..', 'dataset')
         print("cwd:", os.getcwd())
         print("file:", Path(__file__).absolute())
+        super().__init__()
+        self.dataset_dir = os.path.join(os.path.dirname(Path(__file__).absolute()), '..', 'dataset')
+
 
         self.dataset = dataset
         self.datatype = datatype
