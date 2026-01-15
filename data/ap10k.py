@@ -7,6 +7,7 @@ import numpy as np
 import itertools
 
 from data.dataset import CorrespondenceDataset
+from data.dataset_downloader import download_ap10k
 
 
 def load_jsonl_as_dict(path):
@@ -232,9 +233,13 @@ def generate_cross_family_pairs(
 
 
 class AP10KDataset(CorrespondenceDataset):
-    def __init__(self, dataset_dir: str, datatype: str, transform=None, min_kps=3):
-        self.ap10kdir = os.path.join(dataset_dir, 'ap-10k')
+    def __init__(self, datatype: str, transform=None, min_kps=3):
         super().__init__(dataset='ap10k', datatype=datatype, transform=transform)
+
+        self.ap10kdir = os.path.join(self.dataset_dir, 'ap-10k')
+        if not os.path.exists(self.ap10kdir):
+            download_ap10k(self.dataset_dir)
+
         self.min_kps = min_kps
 
         ann_dir = os.path.join(self.ap10kdir, 'annotations')

@@ -23,13 +23,11 @@ class CorrespondenceDataset(Dataset):
     def __init__(self, dataset: str, datatype: str, transform = None):
         '''
         dataset: pfwillow, pfpascal, spair.
-        img_size: image will be resized to this size。
-        datapath: path to the benchmark folder.
-        thres: bbox or img, the length used to measure pck.
-        split: trn, test or val.
+        datatype: trn, test or val.
         '''
         """ CorrespondenceDataset constructor """
         super().__init__()
+        self.dataset_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dataset')
         self.dataset = dataset
         self.datatype = datatype
         self.ann_files = None

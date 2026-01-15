@@ -5,13 +5,17 @@ import os
 import numpy as np
 
 from data.dataset import CorrespondenceDataset
+from data.dataset_downloader import download_pfpascal
 
 
 class PFPascalDataset(CorrespondenceDataset):
-    def __init__(self, dataset_dir: str, datatype: str, transform = None):
-        self.pfpascal_dir = os.path.join(dataset_dir, 'pf-pascal')
-
+    def __init__(self, datatype: str, transform = None):
         super().__init__(dataset='pfpascal', datatype=datatype, transform=transform)
+
+        self.pfpascal_dir = os.path.join(self.dataset_dir, 'pf-pascal')
+        if not os.path.exists(self.pfpascal_dir):
+            download_pfpascal(self.dataset_dir)
+
 
         pairs_csv = os.path.join(self.pfpascal_dir, f"{datatype}_pairs.csv")
 

@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 
-def download(url: str, out_path: Path, chunk_size: int = 1024 * 1024):
+def _download(url: str, out_path: Path, chunk_size: int = 1024 * 1024):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with requests.get(url, stream=True, timeout=60) as r:
         r.raise_for_status()
@@ -23,7 +23,7 @@ def download(url: str, out_path: Path, chunk_size: int = 1024 * 1024):
                     pbar.update(len(chunk))
 
 
-def extract_zip(zip_path: Path, dest_dir: Path, chunk_size: int = 1024 * 1024):
+def _extract_zip(zip_path: Path, dest_dir: Path, chunk_size: int = 1024 * 1024):
     zip_path = Path(zip_path)
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -50,14 +50,14 @@ def extract_zip(zip_path: Path, dest_dir: Path, chunk_size: int = 1024 * 1024):
                         pbar.update(len(chunk))
 
 
-def download_spair():
+def download_spair(dataset_folder_path):
     print("Downloading SPair-71k dataset...")
     dest_dir = Path(dataset_folder_path)
     url = "https://cvlab.postech.ac.kr/research/SPair-71k/data/SPair-71k.tar.gz"
     with tempfile.TemporaryDirectory(prefix="dl_") as tmpdir:
         tmpdir = Path(tmpdir)
         tmp_zip = tmpdir / "SPair-71k.tar.gz"
-        download(url, tmp_zip)
+        _download(url, tmp_zip)
         dest_dir = dest_dir.resolve()
         with tarfile.open(tmp_zip, "r:gz") as tar:
             members = tar.getmembers()
@@ -71,7 +71,7 @@ def download_spair():
                     pbar.update(1)
 
 
-def download_pfpascal():
+def download_pfpascal(dataset_folder_path):
     print("Downloading PF-Pascal dataset...")
     dest_dir = Path(dataset_folder_path) / "pf-pascal"
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -81,13 +81,13 @@ def download_pfpascal():
         tmpdir = Path(tmpdir)
         tmp_zip_data = tmpdir / "PF-Pascal-data.zip"
         tmp_zip_pairs = tmpdir / "PF-Pascal-pairs.zip"
-        download(data_url, tmp_zip_data)
-        download(pairs_url, tmp_zip_pairs)
-        extract_zip(tmp_zip_data, dest_dir)
-        extract_zip(tmp_zip_pairs, dest_dir)
+        _download(data_url, tmp_zip_data)
+        _download(pairs_url, tmp_zip_pairs)
+        _extract_zip(tmp_zip_data, dest_dir)
+        _extract_zip(tmp_zip_pairs, dest_dir)
 
 
-def download_pfwillow():
+def download_pfwillow(dataset_folder_path):
     print("Downloading PF-Willow dataset...")
     dest_dir = Path(dataset_folder_path) / "pf-willow"
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -97,37 +97,11 @@ def download_pfwillow():
         tmpdir = Path(tmpdir)
         tmp_zip_data = tmpdir / "PF-dataset.zip"
         pairs = dest_dir / "test_pairs.csv"
-        download(data_url, tmp_zip_data)
-        download(pairs_url, pairs)
-        extract_zip(tmp_zip_data, dest_dir)
+        _download(data_url, tmp_zip_data)
+        _download(pairs_url, pairs)
+        _extract_zip(tmp_zip_data, dest_dir)
 
 
-dataset_folder_path = os.path.dirname(os.path.abspath(__file__))
+def download_ap10k(dataset_folder_path):
+    raise NotImplementedError("AP-10K dataset download is not yet implemented.")
 
-if __name__ == "__main__":
-    print("Select a dataset to download:")
-    print("1. SPair-71k")
-    print("2. PF-Pascal")
-    print("3. PF-Willow")
-    print("4. AP-10K")
-    print("5. All Datasets")
-    dataset_choice = input("Enter the number corresponding to the dataset: ")
-
-    match dataset_choice:
-        case '1':
-            download_spair()
-        case '2':
-            download_pfpascal()
-        case '3':
-            download_pfwillow()
-        case '4':
-            print("AP-10K dataset download not implemented yet.")
-        case '5':
-            download_spair()
-            download_pfpascal()
-            download_pfwillow()
-            print("AP-10K dataset download not implemented yet.")
-        case _:
-            print("Invalid choice. Exiting.")
-
-    input("Press any key to exit...")

@@ -3,12 +3,18 @@ import json
 from data.dataset import CorrespondenceDataset
 import os
 
+from data.dataset_downloader import download_spair
+
 
 class SPairDataset(CorrespondenceDataset):
-    def __init__(self, dataset_size: str, dataset_dir: str, datatype: str, transform = None):
-        self.spair_dir = os.path.join(dataset_dir, 'SPair-71k')
-
+    def __init__(self, dataset_size: str, datatype: str, transform = None):
         super().__init__(dataset='spair', datatype=datatype, transform=transform)
+
+        self.spair_dir = os.path.join(self.dataset_dir, 'SPair-71k')
+        if not os.path.exists(self.spair_dir):
+            download_spair(self.dataset_dir)
+
+
         self.ann_files = open(
             os.path.join(self.spair_dir, 'Layout', dataset_size, self.datatype + '.txt'),
             "r").read().split('\n')
