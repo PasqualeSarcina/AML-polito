@@ -4,13 +4,25 @@ import torch.nn.functional as F
 import torch.optim as optim
 import sys
 import os
+import random
+import numpy as np
 from torch.utils.data import DataLoader
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from data.task2_DINOv2_no_regularization import SPairDataset
 from utils.setup_data import setup_data
 from TASK2_DINOv2.Hyperparameters.loss import InfoNCELoss
 
+def seed_everything(seed=42):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    print(f">>> SEED SET TO {seed} <<<")
+
 def test_learning_rate(lr_to_try):
+    seed_everything(42)
     print(f"\n>>> TESTING LEARNING RATE: {lr_to_try} <<<")
     print("--- 1. Checking Data Availability ---")
     data_root = setup_data() 

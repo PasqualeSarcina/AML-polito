@@ -5,13 +5,25 @@ import sys
 import os
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import random
+import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from data.task2_DINOv2_dataset import SPairDataset
 from utils.setup_data import setup_data
 from task2_dinov2.Hyperparameters.loss import InfoNCELoss
 
+def seed_everything(seed=42):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    print(f">>> SEED SET TO {seed} <<<")
+
 def coarse_grid(lr_to_try, w_decay):
+    seed_everything(seed=42)
     print(f"\n{'='*60}")
     print(f">>> TESTING LR: {lr_to_try} | WD: {w_decay} <<<")
     print(f"{'='*60}")
