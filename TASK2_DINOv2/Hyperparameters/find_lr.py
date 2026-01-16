@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from data.task2_DINOv2_no_regularization import SPairDataset
 from utils.setup_data import setup_data
-from TASK2_DINOv2.Hyperparameters.loss import InfoNCELoss
+from task2_dinov2.Hyperparameters.loss import InfoNCELoss
 
 def seed_everything(seed=42):
     random.seed(seed)
