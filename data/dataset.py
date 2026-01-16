@@ -44,6 +44,9 @@ class CorrespondenceDataset(Dataset):
         r""" Constructs and return a batch """
         annotation = self.load_annotation(idx)
 
+        # Image as tensor
+        src_img = self.get_image(annotation["src_imname"], category=annotation["category"])
+        trg_img = self.get_image(annotation["trg_imname"], category=annotation["category"])
         # Image name
         sample = dict()
 
@@ -53,14 +56,12 @@ class CorrespondenceDataset(Dataset):
         # Object category
         sample['category'] = annotation['category']
 
-        # Image as tensor
-        src_img = self.get_image(annotation["src_imname"], category=annotation["category"])
-        trg_img = self.get_image(annotation["trg_imname"], category=annotation["category"])
-
+        sample['src_imname'] = annotation["src_imname"]
         sample['src_img'] = src_img
-        sample['trg_img'] = trg_img
-
         sample['src_imsize'] = src_img.size()
+
+        sample['trg_imname'] = annotation["trg_imname"]
+        sample['trg_img'] = trg_img
         sample['trg_imsize'] = trg_img.size()
 
         # Key-points
