@@ -18,7 +18,7 @@ class PreComputedFeaturemaps:
     def __enter__(self):
         return self
 
-    def save_featuremaps(self, emb: torch.Tensor, category: str, imname: str):
+    def save_featuremaps(self, featmap: torch.Tensor, category: str, imname: str):
 
         if self.current_cat is None:
             self.current_cat = category
@@ -30,7 +30,7 @@ class PreComputedFeaturemaps:
             self.output_dict = {}
             self.current_cat = category
 
-        self.output_dict[imname] = emb.detach().cpu()
+        self.output_dict[imname] = featmap.detach().cpu()
 
     def flush(self):
         # Save last category
