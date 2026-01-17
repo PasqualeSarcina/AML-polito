@@ -1,5 +1,6 @@
 from pathlib import Path
 from collections import OrderedDict
+import gc
 
 import torch
 
@@ -27,8 +28,9 @@ class PreComputedFeaturemaps:
             # Save previous category
             if len(self.output_dict) > 0:
                 torch.save(self.output_dict, self.save_dir / f"{self.current_cat}.pth")
-            self.output_dict = {}
+            self.output_dict.clear()
             self.current_cat = category
+            gc.collect()
 
         self.output_dict[imname] = featmap.detach().cpu()
 
@@ -36,7 +38,8 @@ class PreComputedFeaturemaps:
         # Save last category
         if self.current_cat is not None and len(self.output_dict) > 0:
             torch.save(self.output_dict, self.save_dir / f"{self.current_cat}.pth")
-            self.output_dict = {}
+            self.output_dict.clear()
+            gc.collect()
 
     def load_featuremaps(self, category: str, imname: str) -> torch.Tensor:
         # cache hit
