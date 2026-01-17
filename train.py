@@ -145,7 +145,7 @@ def train_finetune(model, train_loader, val_loader, save_dir, n_layers, run_id, 
             print(f"   🏆 Nuovo record! Salvato: {best_name}")
         
         print("-" * 60)
-        return train_loss_history, val_loss_history
+    return train_loss_history, val_loss_history
 
 if __name__ == "__main__":
     seed_everything(42)

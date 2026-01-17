@@ -88,16 +88,6 @@ class SPairDataset(Dataset):
             annotation = json.load(f)
 
         kps_valid = torch.ones(len(annotation['trg_kps']), dtype=torch.bool)
-        
-        if 'truncation' in annotation and annotation['truncation'] is not None:
-             trun = torch.tensor(annotation['truncation'])
-             # Se truncation è 1/True, il punto è invalido
-             kps_valid = kps_valid & (trun == 0) 
-             
-        if 'occlusion' in annotation and annotation['occlusion'] is not None:
-             occl = torch.tensor(annotation['occlusion'])
-             # Se occlusion è 1/True, il punto è invalido
-             kps_valid = kps_valid & (occl == 0)
             
         category = annotation['category']
         src_img = read_img(os.path.join(self.image_path, category, annotation['src_imname']))
