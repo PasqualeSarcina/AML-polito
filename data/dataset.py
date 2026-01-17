@@ -21,7 +21,7 @@ def get_pckthres(bb_annotation, alpha: float):
 class CorrespondenceDataset(Dataset):
     r""" Parent class of PFPascal, PFWillow, and SPair """
 
-    def __init__(self, dataset: str, datatype: str, transform = None, device: torch.device = torch.device("cpu")):
+    def __init__(self, dataset: str, datatype: str, transform = None):
         '''
         dataset: pfwillow, pfpascal, spair.
         datatype: trn, test or val.
@@ -29,7 +29,6 @@ class CorrespondenceDataset(Dataset):
         """ CorrespondenceDataset constructor """
         super().__init__()
         self.dataset_dir = os.path.join(os.path.dirname(Path(__file__).absolute()), '..', 'dataset')
-        self.device = device
         self.dataset = dataset
         self.datatype = datatype
         self.ann_files = None
@@ -64,8 +63,8 @@ class CorrespondenceDataset(Dataset):
         sample['trg_imsize'] = trg_img.size()
 
         # Key-points
-        sample['src_kps'] = torch.tensor(annotation['src_kps'], dtype=torch.float32, device=self.device)
-        sample['trg_kps'] = torch.tensor(annotation['trg_kps'], dtype=torch.float32, device=self.device)
+        sample['src_kps'] = torch.tensor(annotation['src_kps'], dtype=torch.float32)
+        sample['trg_kps'] = torch.tensor(annotation['trg_kps'], dtype=torch.float32)
 
         sample['pck_threshold_0_05'] = get_pckthres(annotation['trg_bndbox'], 0.05)
         sample['pck_threshold_0_1'] = get_pckthres(annotation['trg_bndbox'], 0.1)
@@ -79,7 +78,7 @@ class CorrespondenceDataset(Dataset):
     def get_image(self, imname: str, category: str | None = None):
         path = self.build_image_path(imname, category)
         arr = np.array(Image.open(path).convert("RGB"), dtype=np.float32)
-        return torch.from_numpy(arr).permute(2, 0, 1).to(self.device)
+        return torch.from_numpy(arr).permute(2, 0, 1)
 
 
     def build_image_path(self, imname: str, category: str | None = None) -> str:

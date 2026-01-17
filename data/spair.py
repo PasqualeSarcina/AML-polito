@@ -10,8 +10,8 @@ from data.dataset_downloader import download_spair
 
 
 class SPairDataset(CorrespondenceDataset):
-    def __init__(self, dataset_size: str, datatype: str, transform = None, device: torch.Device = torch.device("cpu")):
-        super().__init__(dataset='spair', datatype=datatype, transform=transform, device=device)
+    def __init__(self, dataset_size: str, datatype: str, transform = None):
+        super().__init__(dataset='spair', datatype=datatype, transform=transform)
 
         self.spair_dir = os.path.join(self.dataset_dir, 'SPair-71k')
         if not os.path.exists(self.spair_dir):
