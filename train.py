@@ -6,16 +6,31 @@ from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
 from segment_anything import sam_model_registry
+import random
+import numpy as np
+import json
+from datetime import datetime
 
 from models.setup import DenseCrossEntropyLoss, configure_model
 from utils.geometry import extract_features
-from utils.common import download_sam_model
+from utils.common import download_sam_model, plot_training_results
 from data.dataset import SPairDataset
 
 # ==========================================
 # TRAINING LOOP
 # ==========================================
-def train_finetune(model, train_loader, val_loader, save_dir, n_layers, epochs=10, lr=1e-5, accumulation_steps=4):
+def seed_everything(seed=42):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False 
+    print(f">>> 🔒 SEED FISSATO A {seed} <<<")
+
+def train_finetune(model, train_loader, val_loader, save_dir, n_layers, run_id, epochs=5, lr=1e-5, accumulation_steps=8):
     scaler = GradScaler()
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
@@ -29,6 +44,8 @@ def train_finetune(model, train_loader, val_loader, save_dir, n_layers, epochs=1
     model.train() 
     
     best_val_loss = float('inf') #TENIAMO TRACCIA DEL MIGLIOR MODELLO
+    train_loss_history = []
+    val_loss_history = []
 
     print(f"🚀 Inizio Training per {epochs} epoche...")
     
@@ -104,27 +121,39 @@ def train_finetune(model, train_loader, val_loader, save_dir, n_layers, epochs=1
         
         avg_val_loss = val_loss / max(val_steps, 1)
 
+        # MEMORIZZARE LE LOSS PER OGNI EPOCA (PLOTTAGGIO DOPO)
+        train_loss_history.append(avg_train_loss)
+        val_loss_history.append(avg_val_loss)
+
         # --- STAMPA E SALVATAGGIO ---
         print(f"\n✅ EPOCA {epoch+1} COMPLETATA:")
         print(f"   📉 Training Loss:   {avg_train_loss:.4f}")
         print(f"   📊 Validation Loss: {avg_val_loss:.4f}")
         
         # Logica di salvataggio
-        # 1. Salva il modello corrente (sovrascrive 'latest')
-        torch.save(model.state_dict(), os.path.join(save_dir, "sam_latest.pth"))
+        # 1. Salva il modello corrente come "latest"
+        #torch.save(model.state_dict(), os.path.join(save_dir, "sam_latest.pth"))
+        latest_name = f"sam_{n_layers}layers_{run_id}_latest.pth"
+        torch.save(model.state_dict(), os.path.join(save_dir, latest_name))
         
         # 2. Salva SE è il migliore finora
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            torch.save(model.state_dict(), os.path.join(save_dir, f"{n_layers}layer_sam_BEST_{epoch}epochs.pth"))
-            print("   🏆 Trovato nuovo miglior modello! Salvato.")
+            #torch.save(model.state_dict(), os.path.join(save_dir, f"{n_layers}layer_sam_BEST_{epoch}epochs.pth"))
+            best_name = f"sam_{n_layers}layers_{run_id}_BEST_ep{epoch+1}.pth"
+            torch.save(model.state_dict(), os.path.join(save_dir, best_name))
+            print(f"   🏆 Nuovo record! Salvato: {best_name}")
         
         print("-" * 60)
+        return train_loss_history, val_loss_history
 
 if __name__ == "__main__":
+    seed_everything(42)
+
     # SETUP PATHS
-    dataset_root = 'dataset/SPair-71k' # Aggiusta se necessario
+    dataset_root = 'dataset/SPair-71k'
     checkpoint_dir = 'checkpoints'
+    results_dir = 'results'
 
     # CONFIGURA DEVICE
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -136,7 +165,7 @@ if __name__ == "__main__":
 
     # CONFIGURA MODELLO PER FINETUNING
     n_layers = 1
-    n_epochs = 10  
+    n_epochs = 5  
     configure_model(sam, unfreeze_last_n_layers=n_layers)
 
     # DATASET E DATALOADER
@@ -152,8 +181,28 @@ if __name__ == "__main__":
     val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4)
     print(f"Dataset Validation caricato: {len(val_dataset)} coppie.")
 
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    run_id = timestamp
+
     # AVVIO TRAINING
     print(f"\n\n{'#'*60}")
     print(f"🧪 ESPERIMENTO: Fine-tuning ultimi {n_layers} layer")
     print(f"{'#'*60}")
-    train_finetune(sam, train_dataloader, val_dataloader, checkpoint_dir, n_layers, n_epochs, lr=1e-5, accumulation_steps=4)
+
+    train_hist, val_hist = train_finetune(
+        sam, train_dataloader, val_dataloader, checkpoint_dir,
+        n_layers, run_id, n_epochs, lr=1e-5, accumulation_steps=8)
+    
+    # PLOTTAGGIO RISULTATI
+    plot_training_results(train_hist, val_hist, results_dir, n_layers, run_id)
+
+    history_data = {
+        'n_layers': n_layers,
+        'run_id': run_id,
+        'train_loss': train_hist,
+        'val_loss': val_hist,
+        'epochs': n_epochs
+    }
+    json_filename = f"history_{n_layers}layers_{run_id}.json"
+    with open(os.path.join(checkpoint_dir, json_filename), 'w') as f:
+        json.dump(history_data, f)

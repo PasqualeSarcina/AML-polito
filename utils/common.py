@@ -2,6 +2,7 @@
 import os
 import requests
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 def download_sam_model(models_dir):
     os.makedirs(models_dir, exist_ok=True)
@@ -26,3 +27,26 @@ def download_sam_model(models_dir):
         print(f"✅ Modello base già presente: {checkpoint_path}")
     
     return checkpoint_path
+
+def plot_training_results(train_losses, val_losses, save_dir, n_layers, run_id):
+    plt.figure(figsize=(10, 6))
+    
+    # Crea asse X basato sul numero di epoche
+    epochs = range(1, len(train_losses) + 1)
+    
+    # Plot Training e Validation
+    plt.plot(epochs, train_losses, label='Training Loss', marker='o')
+    plt.plot(epochs, val_losses, label='Validation Loss', marker='s')
+    
+    # Decorazioni grafico
+    plt.title(f'SAM Fine-tuning: {n_layers} Layers (Run: {run_id})')
+    plt.xlabel('Epoca')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Salvataggio su file
+    filename = f"plot_{n_layers}layers_{run_id}.png"
+    plt.savefig(os.path.join(save_dir, filename))
+    print(f"📈 Grafico salvato come: {filename}")
+    plt.close()
