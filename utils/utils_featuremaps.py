@@ -45,7 +45,7 @@ class PreComputedFeaturemaps:
             return self.cat_cache[category][imname].to(self.device)
 
         # cache miss
-        pth = torch.load(self.save_dir / f"{category}.pth", map_location="cpu")
+        pth = torch.load(self.save_dir / f"{category}.pth", map_location=self.device)
         self.cat_cache[category] = pth
         self.cat_cache.move_to_end(category)
 
