@@ -1,8 +1,4 @@
 import json
-from collections import defaultdict
-from pathlib import Path
-
-import torch
 from data.dataset import CorrespondenceDataset
 import os
 
@@ -22,9 +18,9 @@ class SPairDataset(CorrespondenceDataset):
             os.path.join(self.spair_dir, 'Layout', dataset_size, self.datatype + '.txt'),
             "r").read().split('\n')
         self.ann_files = self.ann_files[:len(self.ann_files) - 1]
-        self.distinct_images = defaultdict(set)
 
-    def load_annotation(self, idx):
+
+    def _load_annotation(self, idx):
         r""" Loads the annotation of the pair with index idx """
         ann_filename = self.ann_files[idx]
         ann_file = ann_filename + '.json'
@@ -35,12 +31,14 @@ class SPairDataset(CorrespondenceDataset):
 
         return annotation
 
-    def build_image_path(self, imname, category=None):
+    def _build_image_path(self, imname, category=None):
         if category is None:
             raise ValueError("SPair requires the category to build the image path.")
         return os.path.join(self.spair_dir, "JPEGImages", category, imname)
 
-    def iter_dist_images(self):
+    def iter_test_distinct_images(self):
+        if self.datatype != 'test':
+            raise ValueError("Distinct images are available only for test set.")
         for line in self.ann_files:
             files, category = line.split(":")
             _, src, trg, *_ = files.split("-")
@@ -49,11 +47,8 @@ class SPairDataset(CorrespondenceDataset):
 
         for category, img_set in self.distinct_images.items():
             for img_name in img_set:
-                img_tensor = self.get_image(img_name + ".jpg", category=category)
+                img_tensor = self._get_image(img_name + ".jpg", category=category)
                 img_size = img_tensor.size()
                 yield img_name, img_tensor, img_size
-
-    def len_dist_images(self) -> int:
-        return sum(len(imgs) for imgs in self.distinct_images.values())
 
 

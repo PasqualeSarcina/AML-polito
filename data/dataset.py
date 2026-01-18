@@ -1,6 +1,7 @@
 r""" Superclass for semantic correspondence datasets """
 
 import os
+from collections import defaultdict
 from pathlib import Path
 
 from torch.ao.nn.quantized.functional import threshold
@@ -33,6 +34,7 @@ class CorrespondenceDataset(Dataset):
         self.datatype = datatype
         self.ann_files = None
         self.transform = transform
+        self.distinct_images = defaultdict(set)
 
     def __len__(self):
         r""" Returns the number of pairs """
@@ -40,11 +42,11 @@ class CorrespondenceDataset(Dataset):
 
     def __getitem__(self, idx):
         r""" Constructs and return a batch """
-        annotation = self.load_annotation(idx)
+        annotation = self._load_annotation(idx)
 
         # Image as tensor
-        src_img = self.get_image(annotation["src_imname"], category=annotation["category"])
-        trg_img = self.get_image(annotation["trg_imname"], category=annotation["category"])
+        src_img = self._get_image(annotation["src_imname"], category=annotation["category"])
+        trg_img = self._get_image(annotation["trg_imname"], category=annotation["category"])
         # Image name
         sample = dict()
 
@@ -75,17 +77,27 @@ class CorrespondenceDataset(Dataset):
 
         return sample
 
-    def get_image(self, imname: str, category: str | None = None):
-        path = self.build_image_path(imname, category)
+    def _get_image(self, imname: str, category: str | None = None):
+        path = self._build_image_path(imname, category)
         arr = np.array(Image.open(path).convert("RGB"), dtype=np.float32)
         return torch.from_numpy(arr).permute(2, 0, 1)
 
 
-    def build_image_path(self, imname: str, category: str | None = None) -> str:
+    def _build_image_path(self, imname: str, category: str | None = None) -> str:
         """Hook: subclasses must implement this method to build image path """
         raise NotImplementedError
 
-    def load_annotation(self, idx: int) -> dict:
+    def _load_annotation(self, idx: int) -> dict:
         """Hook: subclasses must implement this method to load annotation """
         raise NotImplementedError
 
+    def iter_test_distinct_images(self):
+        r""" Hook: subclasses can implement this method to iterate over distinct images """
+        if self.datatype != 'test':
+            raise ValueError("Distinct images are available only for test set.")
+        raise NotImplementedError
+
+    def len_test_distinct_images(self) -> int:
+        if self.datatype != 'test':
+            raise ValueError("Distinct images are available only for test set.")
+        return sum(len(imgs) for imgs in self.distinct_images.values())

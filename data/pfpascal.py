@@ -29,7 +29,7 @@ class PFPascalDataset(CorrespondenceDataset):
             'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor'
         ]
 
-    def load_annotation(self, idx):
+    def _load_annotation(self, idx):
         r""" Loads the annotation of the pair with index idx """
         pair_info = self.ann_files[idx]
 
@@ -38,14 +38,14 @@ class PFPascalDataset(CorrespondenceDataset):
 
         category = self.categories[int(pair_info["class"]) - 1]
 
-        src_kps, src_bbox, src_imsize = self.read_mat(
+        src_kps, src_bbox, src_imsize = self._read_mat(
             os.path.join(self.pfpascal_dir, 'PF-dataset-PASCAL', 'Annotations', category,
                          src_imname.replace('.jpg', '.mat')))
-        trg_kps, trg_bbox, trg_imsize = self.read_mat(
+        trg_kps, trg_bbox, trg_imsize = self._read_mat(
             os.path.join(self.pfpascal_dir, 'PF-dataset-PASCAL', 'Annotations', category,
                          trg_imname.replace('.jpg', '.mat')))
 
-        src_kps, trg_kps = self.filter_valid_keypoints(src_kps, trg_kps)
+        src_kps, trg_kps = self._filter_valid_keypoints(src_kps, trg_kps)
 
         annotation = {
             "pair_id": idx,
@@ -61,7 +61,8 @@ class PFPascalDataset(CorrespondenceDataset):
         }
         return annotation
 
-    def read_mat(self, path):
+    @staticmethod
+    def _read_mat(path):
         r"""Reads a PF-Pascal .mat annotation file."""
         mat = sio.loadmat(path)
 
@@ -77,7 +78,8 @@ class PFPascalDataset(CorrespondenceDataset):
 
         return kps, bbox, imsize
 
-    def filter_valid_keypoints(self, src_kps, trg_kps):
+    @staticmethod
+    def _filter_valid_keypoints(src_kps, trg_kps):
         """
         Mantiene solo i keypoint validi in entrambe le immagini.
         src_kps, trg_kps: (N,2)
@@ -88,5 +90,20 @@ class PFPascalDataset(CorrespondenceDataset):
 
         return src_kps[valid], trg_kps[valid]
 
-    def build_image_path(self, imname, category=None):
+    def _build_image_path(self, imname, category=None):
         return os.path.join(self.pfpascal_dir, "PF-dataset-PASCAL", "JPEGImages", imname)
+
+    def iter_test_distinct_images(self):
+        if self.datatype != 'test':
+            raise ValueError("Distinct images are available only for test set.")
+        for line in self.ann_files:
+            src_imname = line["source_image"].split('/')[-1]
+            trg_imname = line["target_image"].split('/')[-1]
+            self.distinct_images['all'].add(src_imname)
+            self.distinct_images['all'].add(trg_imname)
+
+        for img_name in self.distinct_images['all']:
+            img_tensor = self._get_image(img_name)
+            img_size = img_tensor.size()
+            yield img_name, img_tensor, img_size
+
