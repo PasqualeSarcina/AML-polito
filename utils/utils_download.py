@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import requests
+from tqdm import tqdm
 
 
 def download(url: str, out_path: Path, chunk_size: int = 1024 * 1024):
