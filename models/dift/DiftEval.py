@@ -25,7 +25,7 @@ class DiftEval:
         self.device = args.device
         self.base_dir = args.base_dir
 
-        self.featurizer = SDFeaturizer(self.device)
+        self.featurizer = SDFeaturizer(device=self.device)
 
         self.feat_dir = Path(self.base_dir) / "data" / "features" / "dift"
 
