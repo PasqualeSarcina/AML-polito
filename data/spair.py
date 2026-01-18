@@ -19,6 +19,9 @@ class SPairDataset(CorrespondenceDataset):
             "r").read().split('\n')
         self.ann_files = self.ann_files[:len(self.ann_files) - 1]
 
+        if self.datatype == 'test':
+            self._load_distinct_images()
+
 
     def _load_annotation(self, idx):
         r""" Loads the annotation of the pair with index idx """
@@ -36,14 +39,16 @@ class SPairDataset(CorrespondenceDataset):
             raise ValueError("SPair requires the category to build the image path.")
         return os.path.join(self.spair_dir, "JPEGImages", category, imname)
 
-    def iter_test_distinct_images(self):
-        if self.datatype != 'test':
-            raise ValueError("Distinct images are available only for test set.")
+    def _load_distinct_images(self):
         for line in self.ann_files:
             files, category = line.split(":")
             _, src, trg, *_ = files.split("-")
             self.distinct_images[category].add(src)
             self.distinct_images[category].add(trg)
+
+    def iter_test_distinct_images(self):
+        if self.datatype != 'test':
+            raise ValueError("Distinct images are available only for test set.")
 
         for category, img_set in self.distinct_images.items():
             for img_name in img_set:

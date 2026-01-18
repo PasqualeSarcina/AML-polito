@@ -91,6 +91,10 @@ class CorrespondenceDataset(Dataset):
         """Hook: subclasses must implement this method to load annotation """
         raise NotImplementedError
 
+    def _load_distinct_images(self):
+        """Hook: subclasses must implement this method to load distinct images """
+        raise NotImplementedError
+
     def iter_test_distinct_images(self):
         r""" Hook: subclasses can implement this method to iterate over distinct images """
         if self.datatype != 'test':

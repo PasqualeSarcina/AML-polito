@@ -7,20 +7,7 @@ from tqdm import tqdm
 import tempfile
 from pathlib import Path
 
-
-def _download(url: str, out_path: Path, chunk_size: int = 1024 * 1024):
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with requests.get(url, stream=True, timeout=60) as r:
-        r.raise_for_status()
-        total = int(r.headers.get("content-length", 0))
-
-        with open(out_path, "wb") as f, tqdm(
-                total=total, unit="B", unit_scale=True, desc=f"Downloading {out_path.name}"
-        ) as pbar:
-            for chunk in r.iter_content(chunk_size=chunk_size):
-                if chunk:
-                    f.write(chunk)
-                    pbar.update(len(chunk))
+from utils.utils_download import download
 
 
 def _download_drive_file(file_id: str, out_path: Path, chunk_size: int = 1024 * 1024):
@@ -87,7 +74,7 @@ def download_spair(dataset_folder_path):
     with tempfile.TemporaryDirectory(prefix="dl_") as tmpdir:
         tmpdir = Path(tmpdir)
         tmp_zip = tmpdir / "SPair-71k.tar.gz"
-        _download(url, tmp_zip)
+        download(url, tmp_zip)
         dest_dir = dest_dir.resolve()
         with tarfile.open(tmp_zip, "r:gz") as tar:
             members = tar.getmembers()
@@ -111,8 +98,8 @@ def download_pfpascal(dataset_folder_path):
         tmpdir = Path(tmpdir)
         tmp_zip_data = tmpdir / "PF-Pascal-data.zip"
         tmp_zip_pairs = tmpdir / "PF-Pascal-pairs.zip"
-        _download(data_url, tmp_zip_data)
-        _download(pairs_url, tmp_zip_pairs)
+        download(data_url, tmp_zip_data)
+        download(pairs_url, tmp_zip_pairs)
         _extract_zip(tmp_zip_data, dest_dir)
         _extract_zip(tmp_zip_pairs, dest_dir)
 
@@ -127,8 +114,8 @@ def download_pfwillow(dataset_folder_path):
         tmpdir = Path(tmpdir)
         tmp_zip_data = tmpdir / "PF-dataset.zip"
         pairs = dest_dir / "test_pairs.csv"
-        _download(data_url, tmp_zip_data)
-        _download(pairs_url, pairs)
+        download(data_url, tmp_zip_data)
+        download(pairs_url, pairs)
         _extract_zip(tmp_zip_data, dest_dir)
 
 

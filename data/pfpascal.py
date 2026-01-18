@@ -29,6 +29,9 @@ class PFPascalDataset(CorrespondenceDataset):
             'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor'
         ]
 
+        if self.datatype == 'test':
+            self._load_distinct_images()
+
     def _load_annotation(self, idx):
         r""" Loads the annotation of the pair with index idx """
         pair_info = self.ann_files[idx]
@@ -93,14 +96,16 @@ class PFPascalDataset(CorrespondenceDataset):
     def _build_image_path(self, imname, category=None):
         return os.path.join(self.pfpascal_dir, "PF-dataset-PASCAL", "JPEGImages", imname)
 
-    def iter_test_distinct_images(self):
-        if self.datatype != 'test':
-            raise ValueError("Distinct images are available only for test set.")
+    def _load_distinct_images(self):
         for line in self.ann_files:
             src_imname = line["source_image"].split('/')[-1]
             trg_imname = line["target_image"].split('/')[-1]
             self.distinct_images['all'].add(src_imname)
             self.distinct_images['all'].add(trg_imname)
+
+    def iter_test_distinct_images(self):
+        if self.datatype != 'test':
+            raise ValueError("Distinct images are available only for test set.")
 
         for img_name in self.distinct_images['all']:
             img_tensor = self._get_image(img_name)
