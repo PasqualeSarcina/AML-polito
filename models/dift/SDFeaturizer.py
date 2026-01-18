@@ -18,7 +18,7 @@ class SDFeaturizer:
         onestep_pipe.scheduler = DDIMScheduler.from_pretrained(sd_id, subfolder="scheduler")
         onestep_pipe = onestep_pipe.to(self.device)
         onestep_pipe.enable_attention_slicing()
-        onestep_pipe.enable_xformers_memory_efficient_attention()
+        #onestep_pipe.enable_xformers_memory_efficient_attention()
         self.pipe = onestep_pipe
 
     def encode_category_prompts(self, cat_list) -> dict:
