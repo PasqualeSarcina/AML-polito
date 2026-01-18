@@ -54,6 +54,11 @@ class SPairDataset(CorrespondenceDataset):
             for img_name in img_set:
                 img_tensor = self._get_image(img_name + ".jpg", category=category)
                 img_size = img_tensor.size()
-                yield img_name, img_tensor, img_size
+                yield img_name, img_tensor, img_size, category
+
+    def get_categories(self) -> list[str]:
+        if self.datatype != 'test':
+            raise ValueError("Distinct images are available only for test set.")
+        return list(self.distinct_images.keys())
 
 

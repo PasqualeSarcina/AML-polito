@@ -4,7 +4,7 @@ import os
 import torch
 from IPython import get_ipython
 
-from models import sam
+from models import sam, dift
 from utils.utils_results import compute_correct_per_category, compute_pckt_keypoints, compute_pckt_images
 
 
@@ -62,7 +62,7 @@ def main():
             model = sam.SamEval(args)
 
         case 'dift':
-            raise NotImplementedError
+            model = dift.DiftEval(args)
 
         case _:
             raise ValueError(f"Unknown model: {args.model}")

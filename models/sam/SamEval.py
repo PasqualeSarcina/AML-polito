@@ -25,7 +25,7 @@ class SamEval:
         self.wsam_win_size = args.wsam_win_size
         self.wsam_beta = args.wsam_beta
         self.device = args.device
-        self.using_colab = args.using_colab
+        #self.using_colab = args.using_colab
         self.base_dir = args.base_dir
         self._init_model()
         self._init_dataset()
@@ -37,7 +37,7 @@ class SamEval:
         if self.custom_weights is not None:
             sam_checkpoint = self.custom_weights
         else:
-            sam_checkpoint = os.path.join(self.base_dir, "models/sam_vit_b_01ec64.pth")
+            sam_checkpoint = os.path.join(self.base_dir, "checkpoints/sam_vit_b_01ec64.pth")
 
         if not os.path.exists(sam_checkpoint):
             if self.custom_weights is None:
