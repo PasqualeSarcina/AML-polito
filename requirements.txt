@@ -1,1 +1,13 @@
-
+numpy
+torch
+torchvision
+pillow
+scipy
+requests
+tqdm
+pandas
+segment_anything
+diffusers
+matplotlib
+ipython
+transformers
