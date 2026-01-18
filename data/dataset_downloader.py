@@ -23,6 +23,36 @@ def _download(url: str, out_path: Path, chunk_size: int = 1024 * 1024):
                     pbar.update(len(chunk))
 
 
+def _download_drive_file(file_id: str, out_path: Path, chunk_size: int = 1024 * 1024):
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    session = requests.Session()
+    url = "https://drive.google.com/uc?export=download"
+
+    # prima richiesta
+    r = session.get(url, params={"id": file_id}, stream=True)
+    r.raise_for_status()
+
+    # cerca token di conferma nei cookie
+    confirm = None
+    for k, v in session.cookies.items():
+        if k.startswith("download_warning"):
+            confirm = v
+            break
+
+    # seconda richiesta con conferma, se necessaria
+    if confirm:
+        r = session.get(url, params={"id": file_id, "confirm": confirm}, stream=True)
+        r.raise_for_status()
+
+    with open(out_path, "wb") as f, tqdm(
+            total=int(r.headers.get("content-length", 0)), unit="B", unit_scale=True, desc=f"Downloading {out_path.name}"
+    ) as pbar:
+        for chunk in r.iter_content(chunk_size=chunk_size):
+            if chunk:
+                f.write(chunk)
+                pbar.update(len(chunk))
+
+
 def _extract_zip(zip_path: Path, dest_dir: Path, chunk_size: int = 1024 * 1024):
     zip_path = Path(zip_path)
     dest_dir = Path(dest_dir)
@@ -103,5 +133,13 @@ def download_pfwillow(dataset_folder_path):
 
 
 def download_ap10k(dataset_folder_path):
-    raise NotImplementedError("AP-10K dataset download is not yet implemented.")
+    print("Downloading AP-10K dataset...")
+    dest_dir = Path(dataset_folder_path) / "ap-10k"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    file_id = "1-FNNGcdtAQRehYYkGY1y4wzFNg4iWNad"  # Example file ID
+    with tempfile.TemporaryDirectory(prefix="dl_") as tmpdir:
+        tmpdir = Path(tmpdir)
+        tmp_zip = tmpdir / "ap-10k.zip"
+        _download_drive_file(file_id, tmp_zip)
+        _extract_zip(tmp_zip, dest_dir)
 
