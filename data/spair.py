@@ -47,12 +47,13 @@ class SPairDataset(CorrespondenceDataset):
             self.distinct_images[category].add(src)
             self.distinct_images[category].add(trg)
 
-        for category, img_name in self.distinct_images:
-            img_tensor = self.get_image(img_name + ".jpeg", category=category)
-            img_size = img_tensor.size()
-            yield img_name, img_tensor, img_size
+        for category, img_set in self.distinct_images.items():
+            for img_name in img_set:
+                img_tensor = self.get_image(img_name + ".jpg", category=category)
+                img_size = img_tensor.size()
+                yield img_name, img_tensor, img_size
 
-    def len_dist_images(self):
+    def len_dist_images(self) -> int:
         return sum(len(imgs) for imgs in self.distinct_images.values())
 
 
