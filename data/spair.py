@@ -1,8 +1,8 @@
 import json
+from collections import defaultdict
 from pathlib import Path
 
 import torch
-
 from data.dataset import CorrespondenceDataset
 import os
 
@@ -22,6 +22,7 @@ class SPairDataset(CorrespondenceDataset):
             os.path.join(self.spair_dir, 'Layout', dataset_size, self.datatype + '.txt'),
             "r").read().split('\n')
         self.ann_files = self.ann_files[:len(self.ann_files) - 1]
+        self.distinct_images = defaultdict(set)
 
     def load_annotation(self, idx):
         r""" Loads the annotation of the pair with index idx """
@@ -39,24 +40,19 @@ class SPairDataset(CorrespondenceDataset):
             raise ValueError("SPair requires the category to build the image path.")
         return os.path.join(self.spair_dir, "JPEGImages", category, imname)
 
-    def iter_images(self):
-        img_root = Path(self.spair_dir) / "JPEGImages"
+    def iter_dist_images(self):
+        for line in self.ann_files:
+            files, category = line.split(":")
+            _, src, trg, *_ = files.split("-")
+            self.distinct_images[category].add(src)
+            self.distinct_images[category].add(trg)
 
-        for category_dir in img_root.iterdir():
-            category = category_dir.name
+        for category, img_name in self.distinct_images:
+            img_tensor = self.get_image(img_name + ".jpeg", category=category)
+            img_size = img_tensor.size()
+            yield img_name, img_tensor, img_size
 
-            for img_path in category_dir.iterdir():
+    def len_dist_images(self):
+        return sum(len(imgs) for imgs in self.distinct_images.values())
 
-                img_tensor = self.get_image(img_path.name, category)
 
-                yield img_tensor, img_tensor.size(), category, img_path.name
-
-    def num_images(self):
-        img_root = Path(self.spair_dir) / "JPEGImages"
-        exts = {".jpg", ".jpeg", ".png"}
-        return sum(
-            1
-            for category_dir in img_root.iterdir() if category_dir.is_dir()
-            for p in category_dir.iterdir()
-            if p.is_file() and p.suffix.lower() in exts
-        )
