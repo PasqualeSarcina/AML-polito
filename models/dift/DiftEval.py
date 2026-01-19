@@ -26,6 +26,7 @@ class DiftEval:
         self.wsam_beta = args.wsam_beta
         self.device = args.device
         self.base_dir = args.base_dir
+        self.enseble_size = args.ensemble_size
 
         self.featurizer = SDFeaturizer(device=self.device)
 
@@ -93,7 +94,8 @@ class DiftEval:
 
         unet_ft = self.featurizer.forward(
             img_tensor=img_tensor_resized,
-            prompt_embed=prompt_embed
+            prompt_embed=prompt_embed,
+            ensemble_size=self.enseble_size
         )  # (1,c,h,w)
         save_featuremap(unet_ft, img_name, self.feat_dir)
         self.processed_img[category_opt].add(img_name)

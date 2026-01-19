@@ -23,6 +23,8 @@ def build_parser():
 
     dift = model.add_parser("dift")
     dift.add_argument("--fuse-dino", type=bool, required=False, help="path to custom weights")
+    dift.add_argument("--ensemble-size", type=int, default=4,
+                      help="Number of augmentations for DIFT feature extraction", required=False)
 
     win_soft_argmax = parser.add_argument_group('win_soft_argmax')
     win_soft_argmax.add_argument(

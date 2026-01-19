@@ -21,6 +21,7 @@ class SDFeaturizer:
         try:
             import xformers
             onestep_pipe.enable_xformers_memory_efficient_attention()
+            print("xformers is successfully enabled.")
         except:
             print("xformers is not installed, running without it.")
         self.pipe = onestep_pipe
