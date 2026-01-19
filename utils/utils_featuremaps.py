@@ -9,5 +9,4 @@ def save_featuremap(featmap: torch.Tensor, imname: str, path: Path):
     torch.save(featmap.detach().cpu(), path / f"{imname}.pt")
 
 def load_featuremap(imname: str, path: Path, device: torch.device = torch.device("cpu")) -> torch.Tensor:
-    clear_name = imname.split(".")[0]
-    return torch.load(path / f"{clear_name}.pt", map_location=device)
+    return torch.load(path / f"{imname}.pt", map_location=device)

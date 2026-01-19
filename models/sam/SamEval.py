@@ -1,5 +1,6 @@
 import math
 import os
+from collections import defaultdict
 from pathlib import Path
 
 import torch
@@ -25,26 +26,25 @@ class SamEval:
         self.wsam_win_size = args.wsam_win_size
         self.wsam_beta = args.wsam_beta
         self.device = args.device
-        #self.using_colab = args.using_colab
+        # self.using_colab = args.using_colab
         self.base_dir = args.base_dir
         self._init_model()
         self._init_dataset()
 
         self.feat_dir = Path(self.base_dir) / "data" / "features" / "sam"
-
+        self.processed_img = defaultdict(set)
 
     def _init_model(self):
         if self.custom_weights is not None:
             sam_checkpoint = self.custom_weights
         else:
-            sam_checkpoint = os.path.join(self.base_dir, "checkpoints/sam_vit_b_01ec64.pth")
+            sam_checkpoint = Path(self.base_dir) / "checkpoints" / "sam_vit_b_01ec64.pth"
 
         if not os.path.exists(sam_checkpoint):
             if self.custom_weights is None:
                 download("https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth", sam_checkpoint)
             else:
                 raise FileNotFoundError(f"SAM checkpoint not found at {sam_checkpoint}")
-
 
         sam = sam_model_registry["vit_b"](checkpoint=sam_checkpoint)
         sam.to(self.device)
@@ -53,7 +53,6 @@ class SamEval:
         self.transform = self.predictor.transform
         self.IMG_SIZE = self.predictor.model.image_encoder.img_size  # 1024
         self.PATCH = int(self.predictor.model.image_encoder.patch_embed.proj.kernel_size[0])
-
 
     def _init_dataset(self):
         match self.dataset_name:
@@ -71,23 +70,22 @@ class SamEval:
 
         self.dataloader = DataLoader(self.dataset, num_workers=4, batch_size=1, collate_fn=collate_single)
 
-    def _compute_features(self):
-        print("Saving features to:", self.feat_dir)
+    def _compute_features(self, img_tensor: torch.Tensor, img_size: torch.Size, img_name: str,
+                          category: str) -> torch.Tensor:
+        if img_name in self.processed_img[category]:
+            # Carica featuremap salvata
+            img_emb = load_featuremap(img_name, self.feat_dir, self.device)  # [C,h',w']
+            return img_emb
 
-        torch.cuda.empty_cache()
-        with torch.no_grad():
-            for img_name, img_tensor, img_size in tqdm(
-                    self.dataset.iter_test_distinct_images(),
-                    total=self.dataset.len_test_distinct_images(),
-                    desc="Generating embeddings"
-            ):
-                img_tensor = img_tensor.to(self.device).unsqueeze(0)  # [1,3,H,W]
-                orig_size = tuple(img_size[1:])  # (H,W)
-                resized = self.predictor.transform.apply_image_torch(img_tensor)  # [1,3,H',W']
-                self.predictor.set_torch_image(resized, orig_size)
-                img_emb = self.predictor.get_image_embedding()[0]  # [C,h',w']
+        img_tensor = img_tensor.to(self.device).unsqueeze(0)  # [1,3,H,W]
+        orig_size = tuple(img_size[1:])  # (H,W)
+        resized = self.predictor.transform.apply_image_torch(img_tensor)  # [1,3,H',W']
+        self.predictor.set_torch_image(resized, orig_size)
+        img_emb = self.predictor.get_image_embedding()[0]  # [C,h',w']
+        self.processed_img[category].add(img_name)
+        save_featuremap(img_emb, img_name, self.feat_dir)
 
-                save_featuremap(img_emb, img_name, self.feat_dir)
+        return img_emb
 
     def _kps_src_to_featmap(self, kps_src: torch.Tensor, img_src_size: torch.Size):
         img_h = int(img_src_size[-2])
@@ -111,13 +109,16 @@ class SamEval:
 
     def _compute_distances(self) -> list[CorrespondenceResult]:
         results = []
-        torch.cuda.empty_cache()
 
+        torch.cuda.empty_cache()
         with torch.no_grad():
             for batch in tqdm(
                     self.dataloader,
                     total=len(self.dataloader),
-                    desc=f"Elaborazione con SAM"
+                    desc=f"Elaborazione con SAM",
+                    smoothing=0.1,
+                    mininterval=0.7,
+                    maxinterval=2.0
             ):
                 category = batch["category"]
 
@@ -127,9 +128,8 @@ class SamEval:
                 src_imname = batch["src_imname"]
                 trg_imname = batch["trg_imname"]
 
-                # Embeddings SAM (C, h, w) tipicamente (256, 64, 64) o simili
-                src_emb = load_featuremap(src_imname, self.feat_dir, self.device)  # [C,hs,ws]
-                trg_emb = load_featuremap(trg_imname, self.feat_dir, self.device)  # [C,ht,wt]
+                src_emb = self._compute_features(batch["src_img"], batch["src_imsize"], src_imname, category)
+                trg_emb = self._compute_features(batch["trg_img"], batch["trg_imsize"], trg_imname, category)
 
                 # Keypoints (N,2) in pixel originali, ordine (x,y)
                 src_kps = batch["src_kps"].to(self.device)
@@ -204,7 +204,6 @@ class SamEval:
                         align_corners=False
                     )[0, 0]  # (H_prime, W_prime)
 
-
                     if self.win_soft_argmax:
                         # windowed soft-argmax
                         x_r, y_r = argmax(
@@ -239,12 +238,7 @@ class SamEval:
 
         return results
 
-
     def evaluate(self) -> list[CorrespondenceResult]:
-        # Step 1: compute and save features
-        self._compute_features()
-
-        # Step 2: compute distances
         results = self._compute_distances()
 
         return results
