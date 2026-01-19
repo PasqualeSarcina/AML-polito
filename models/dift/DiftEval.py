@@ -97,6 +97,7 @@ class DiftEval:
         )  # (1,c,h,w)
         save_featuremap(unet_ft, img_name, self.feat_dir)
         self.processed_img[category_opt].add(img_name)
+        print(unet_ft.size())
         return unet_ft
 
     @staticmethod
