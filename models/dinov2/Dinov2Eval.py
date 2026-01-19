@@ -160,16 +160,13 @@ class Dinov2Eval:
 
         torch.cuda.empty_cache()
         with torch.no_grad():
-            for batch in tqdm(self.dataloader, total=len(self.dataloader), desc="Computing PCK with DINOv2 (SAM-like)"):
+            for batch in tqdm(self.dataloader, total=len(self.dataloader), desc="Computing PCK with DINOv2"):
                 # featuremaps salvate su immagini resized 518x518
                 feats_src = load_featuremap(batch["src_imname"], self.feat_dir)
                 feats_trg = load_featuremap(batch["trg_imname"], self.feat_dir)
 
-                # device coerente
-                if isinstance(feats_src, torch.Tensor):
-                    feats_src = feats_src.to(self.device)
-                if isinstance(feats_trg, torch.Tensor):
-                    feats_trg = feats_trg.to(self.device)
+                feats_src = feats_src.to(self.device)
+                feats_trg = feats_trg.to(self.device)
 
                 # se includono CLS token (1 + 1369), rimuovilo
                 if feats_src.ndim == 3 and feats_src.shape[1] == 1 + h_grid * w_grid:
@@ -186,20 +183,8 @@ class Dinov2Eval:
 
                 # size originale target (per inversione 518->originale)
                 tsize = batch["trg_imsize"]
-                if isinstance(tsize, torch.Tensor):
-                    if tsize.numel() == 3:  # (C,H,W)
-                        Ht = float(tsize[1].item())
-                        Wt = float(tsize[2].item())
-                    else:  # (H,W)
-                        Ht = float(tsize[0].item())
-                        Wt = float(tsize[1].item())
-                else:
-                    tsize = tuple(tsize)
-                    if len(tsize) == 3:
-                        _, Ht, Wt = tsize
-                    else:
-                        Ht, Wt = tsize
-                    Ht, Wt = float(Ht), float(Wt)
+                Ht = float(tsize[1].item())
+                Wt = float(tsize[2].item())
 
                 sx_t = out_w / Wt
                 sy_t = out_h / Ht
