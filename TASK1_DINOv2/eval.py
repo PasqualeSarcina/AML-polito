@@ -6,22 +6,9 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from data.task1_DINOv2_dataset import SPairDataset  
+from data.task3_DINOv2_dataset import SPairDataset  
 from utils.setup_data import setup_data
 
-# --- Helper for Model Inference ---
-def pad_to_multiple(x, k=14):
-    """
-    Pads the image (bottom and right) so H and W are multiples of k (patch size).
-    Crucial for DINOv2 to avoid shape mismatch errors.
-    """
-    h, w = x.shape[-2:]
-    new_h = math.ceil(h / k) * k
-    new_w = math.ceil(w / k) * k
-    pad_bottom, pad_right = new_h - h, new_w - w
-    if pad_bottom == 0 and pad_right == 0: return x
-    return F.pad(x, (0, pad_right, 0, pad_bottom), value=0)
 
 if __name__ == '__main__':
     print("--- 1. Checking Data Availability ---")
@@ -48,6 +35,7 @@ if __name__ == '__main__':
         layout_path, 
         image_path, 
         dataset_size='large', 
+        pck_alpha=0.5,
         datatype='test'
     )
     
@@ -95,40 +83,32 @@ with torch.no_grad(): # Disable gradients
        
         trg_img = data['trg_img'].to(device)
 
-        # --- FIX: APPLY PADDING ---
-        # Ensure dimensions are multiples of 14 to avoid AssertionError
-        src_img_padded = pad_to_multiple(src_img, 14)
-        trg_img_padded = pad_to_multiple(trg_img, 14)
-
-        
+              
         # We pass the PADDED images
-        dict_src = model.forward_features(src_img_padded) # Python dictionary. 
-        dict_trg = model.forward_features(trg_img_padded)
+        dict_src = model.forward_features(src_img) # Python dictionary. 
+        dict_trg = model.forward_features(trg_img)
         
         feats_src = dict_src["x_norm_patchtokens"] # [Batch_Size, Num_Patches, Dimension]
         feats_trg = dict_trg["x_norm_patchtokens"]
-        
-        # --- IMPORTANT: GRID CALCULATION ---
-        # We must use PADDED dimensions for the grid, otherwise indices will drift
-        _, _, H_padded, W_padded = src_img_padded.shape 
-        
+         
         # We keep ORIGINAL dimensions for valid boundary checks
         _, _, H_orig, W_orig = data['src_img'].shape
 
         patch_size = 14
-        w_grid = W_padded // patch_size 
-        h_grid = H_padded // patch_size
+        w_grid = 37 
+        h_grid = 37
 
         kps_list_src = data['src_kps'][0] 
         trg_kps_gt = data['trg_kps'][0] 
-        
-        bbox_list = data['trg_bbox'] 
+        valid_mask = data['valid_mask'][0]
+    
+        bbox = data['trg_bbox'][0] 
 
         # Estraiamo i 4 valori scalari per l'immagine corrente (indice batch 0)
-        x_min = bbox_list[0][0].item()
-        y_min = bbox_list[1][0].item()
-        x_max = bbox_list[2][0].item()
-        y_max = bbox_list[3][0].item()
+        x_min = bbox[0].item()
+        y_min = bbox[1].item()
+        x_max = bbox[2].item()
+        y_max = bbox[3].item()
 
         w_bbox = x_max - x_min
         h_bbox = y_max - y_min
@@ -143,23 +123,18 @@ with torch.no_grad(): # Disable gradients
         #         
         for n_keypoint, keypoint_src in enumerate(kps_list_src):
 
+            if valid_mask[n_keypoint] == 0:
+                continue
+
             x_src_val = keypoint_src[0].item()
             y_src_val = keypoint_src[1].item()
 
-            # NaN Check
-            if math.isnan(x_src_val) or math.isnan(y_src_val):
-                continue
-            
             x_pixel_src = int(x_src_val)
             y_pixel_src = int(y_src_val)
 
-            # Boundary Check on ORIGINAL image (ignore points in padded area if any)
-            if not (0 <= x_pixel_src < W_orig and 0 <= y_pixel_src < H_orig):
-                continue
-
             # Grid Clamp
-            x_patch_src = min(x_pixel_src // patch_size, w_grid - 1)
-            y_patch_src = min(y_pixel_src // patch_size, h_grid - 1)
+            x_patch_src = min(max(0, x_pixel_src // patch_size), w_grid - 1)
+            y_patch_src = min(max(0, y_pixel_src // patch_size), h_grid - 1)
 
             # 3. INDEX CALCULATION
             patch_index_src = (y_patch_src * w_grid) + x_patch_src
@@ -167,9 +142,8 @@ with torch.no_grad(): # Disable gradients
             # Extract Vector
             source_vec = feats_src[0, patch_index_src, :]
 
-            # Cosine Similarity
+            # Cosine Similarity shape [1369]
             similarity_map = torch.cosine_similarity(source_vec, feats_trg[0], dim=-1)
-
             # Prediction
             patch_idx_spatial = torch.argmax(similarity_map).item()
 
@@ -184,15 +158,9 @@ with torch.no_grad(): # Disable gradients
             gt_x = trg_kps_gt[n_keypoint, 0].item()
             gt_y = trg_kps_gt[n_keypoint, 1].item()
 
-            if math.isnan(gt_x) or math.isnan(gt_y):
-                continue
-            if not (0 <= gt_x < W_orig and 0 <= gt_y < H_orig):
-                continue
-
             # Distance & Update
             distance = math.sqrt((x_pred_pixel - gt_x)**2 + (y_pred_pixel - gt_y)**2)
 
-           
             is_correct_05 = distance <= thr_05
             is_correct_10 = distance <= thr_10
             is_correct_20 = distance <= thr_20

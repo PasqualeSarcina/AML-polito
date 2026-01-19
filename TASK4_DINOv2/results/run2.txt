@@ -1,0 +1,25 @@
+lr = 1e-5 weight decay 1e-2 batch size = 8 scheduler dropout=0.2
+Epoch [1/5] Avg Training Loss: 3.2551
+Epoch [1/5] Avg Validation Loss: 3.0835
+
+Epoch [2/5] Avg Training Loss: 2.6684
+--> Learning Rate for next epoch: 0.00000655
+Epoch [2/5] Avg Validation Loss: 2.9691
+--> 🏆 New Best Model Saved! (Loss: 2.9691)
+
+
+Epoch [3/5] Avg Training Loss: 2.4777
+--> Learning Rate for next epoch: 0.00000345
+Epoch [3/5] Avg Validation Loss: 2.9341
+--> 🏆 New Best Model Saved! (Loss: 2.9341)
+
+
+Epoch [4/5] Avg Training Loss: 2.3809
+--> Learning Rate for next epoch: 0.00000095
+Epoch [4/5] Avg Validation Loss: 2.9259
+--> 🏆 New Best Model Saved! (Loss: 2.9259)
+
+
+Epoch [5/5] Avg Training Loss: 2.3396
+--> Learning Rate for next epoch: 0.00000000
+Epoch [5/5] Avg Validation Loss: 2.9391
