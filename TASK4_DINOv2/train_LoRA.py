@@ -66,12 +66,12 @@ def fine_tuning(epochs, lr, w_decay):
     seed_everything(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14').to(device)
-    # 2. Configura LoRA
+  
     lora_config = LoraConfig(
-        r=16,                   # Rank: 8 o 16 sono i valori standard
-        lora_alpha=32,          # Alpha: di solito il doppio del rank
-        target_modules=["qkv"], # <--- DINOv2 usa un unico layer 'qkv' per l'attenzione
-        lora_dropout=0.1,       # Aiuta a prevenire l'overfitting
+        r=16,                  
+        lora_alpha=32,          
+        target_modules=["qkv"], # layer 'qkv' per l'attenzione
+        lora_dropout=0.1,      
         bias="none"
     )
 
@@ -83,8 +83,7 @@ def fine_tuning(epochs, lr, w_decay):
 
     # 5. Stampa di controllo
     model.print_trainable_parameters()
-    # Ti dirà che stai allenando circa l'1% dei parametri.
-    # Ma quell'1% è distribuito in modo intelligente su tutto il modello!
+    
     criterion = InfoNCELoss(temperature=0.07).to(device)
 
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), 
@@ -105,7 +104,7 @@ def fine_tuning(epochs, lr, w_decay):
 
         for i, batch in enumerate(pbar):
             
-            # 2. Training Logic (INDENTED INSIDE THE LOOP)
+            # 2. Training Logic 
             src_img = batch['src_img'].to(device)
             trg_img = batch['trg_img'].to(device)
             src_kps = batch['src_kps'].to(device)
