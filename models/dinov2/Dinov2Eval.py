@@ -1,4 +1,5 @@
 import math
+from collections import defaultdict
 from pathlib import Path
 
 import torch
@@ -28,6 +29,7 @@ class Dinov2Eval:
         self._init_dataset()
 
         self.feat_dir = Path(self.base_dir) / "data" / "features" / "dinov2"
+        self.processed_img = defaultdict(set)
 
     def _init_model(self):
         model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
@@ -61,7 +63,6 @@ class Dinov2Eval:
 
         self.dataloader = DataLoader(self.dataset, num_workers=4, batch_size=1, collate_fn=collate_single)
 
-
     @staticmethod
     def _preprocess_tensor(img: torch.Tensor, out_dim: tuple[int, int] = (518, 518)) -> torch.Tensor:
         """
@@ -91,25 +92,24 @@ class Dinov2Eval:
 
         # Normalize ImageNet
         mean = x.new_tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
-        std  = x.new_tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+        std = x.new_tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
         x = (x - mean) / std
 
         return x
 
-    def _compute_features(self):
-        print("Saving features to:", self.feat_dir)
+    def _compute_features(self, img_tensor: torch.Tensor, img_name: str,
+                          category: str) -> torch.Tensor:
+        if self.dataset_name == "ap-10k":
+            category = "all"
+        if img_name in self.processed_img[category]:
+            dict_out = load_featuremap(img_name, self.feat_dir, device=self.device)
+            return dict_out
 
-        torch.cuda.empty_cache()
-        with torch.no_grad():
-            for img_name, img_tensor, _, _ in tqdm(
-                    self.dataset.iter_test_distinct_images(),
-                    total=self.dataset.len_test_distinct_images(),
-                    desc="Generating embeddings"
-            ):
-                dict_out = self.model.forward_features(self._preprocess_tensor(img_tensor.to(self.device)))
-                featmap = dict_out["x_norm_patchtokens"]
-
-                save_featuremap(featmap, img_name, self.feat_dir)
+        dict_out = self.model.forward_features(self._preprocess_tensor(img_tensor.to(self.device)))
+        featmap = dict_out["x_norm_patchtokens"]
+        self.processed_img[category].add(img_name)
+        save_featuremap(featmap, img_name, self.feat_dir)
+        return featmap
 
     @staticmethod
     def _resize_keypoints(
@@ -150,7 +150,7 @@ class Dinov2Eval:
         k[:, 1] = (k[:, 1] + 0.5) * sy - 0.5
         return k
 
-    def _compute_distances(self) -> list[CorrespondenceResult]:
+    def evaluate(self) -> list[CorrespondenceResult]:
         results = []
 
         out_h, out_w = 518, 518
@@ -160,10 +160,12 @@ class Dinov2Eval:
 
         torch.cuda.empty_cache()
         with torch.no_grad():
-            for batch in tqdm(self.dataloader, total=len(self.dataloader), desc="Computing PCK with DINOv2"):
+            for batch in tqdm(self.dataloader, total=len(self.dataloader), desc=f"Computing correspondeces with DINOv2 on {self.dataset_name}",
+                              smoothing=0.1, mininterval=0.7, maxinterval=2.0):
+                category = batch["category"]
                 # featuremaps salvate su immagini resized 518x518
-                feats_src = load_featuremap(batch["src_imname"], self.feat_dir)
-                feats_trg = load_featuremap(batch["trg_imname"], self.feat_dir)
+                feats_src = self._compute_features(batch["src_img"], batch["src_imname"], category)
+                feats_trg = self._compute_features(batch["trg_img"], batch["trg_imname"], category)
 
                 feats_src = feats_src.to(self.device)
                 feats_trg = feats_trg.to(self.device)
@@ -183,8 +185,8 @@ class Dinov2Eval:
 
                 # size originale target (per inversione 518->originale)
                 tsize = batch["trg_imsize"]
-                Ht = float(tsize[1].item())
-                Wt = float(tsize[2].item())
+                Ht = float(tsize[1])
+                Wt = float(tsize[2])
 
                 sx_t = out_w / Wt
                 sy_t = out_h / Ht
@@ -258,7 +260,7 @@ class Dinov2Eval:
 
                 results.append(
                     CorrespondenceResult(
-                        category=batch["category"],
+                        category=category,
                         distances=distances_this_image,
                         # soglie già in pixel ORIGINALI (coerenti con dist)
                         pck_threshold_0_05=batch["pck_threshold_0_05"],
@@ -320,12 +322,3 @@ class Dinov2Eval:
         x_soft = torch.sum(weights * local_x)
 
         return y_soft, x_soft
-
-    def evaluate(self) -> list[CorrespondenceResult]:
-        # Step 1: compute and save features
-        self._compute_features()
-
-        # Step 2: compute distances
-        results = self._compute_distances()
-
-        return results

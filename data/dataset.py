@@ -34,7 +34,6 @@ class CorrespondenceDataset(Dataset):
         self.datatype = datatype
         self.ann_files = None
         self.transform = transform
-        self.distinct_images = defaultdict(set)
 
     def __len__(self):
         r""" Returns the number of pairs """
@@ -91,17 +90,6 @@ class CorrespondenceDataset(Dataset):
         """Hook: subclasses must implement this method to load annotation """
         raise NotImplementedError
 
-    def _load_distinct_images(self):
-        """Hook: subclasses must implement this method to load distinct images """
+    def get_categories(self) -> set:
+        """Hook: subclasses must implement this method to return the set of categories """
         raise NotImplementedError
-
-    def iter_test_distinct_images(self):
-        r""" Hook: subclasses can implement this method to iterate over distinct images """
-        if self.datatype != 'test':
-            raise ValueError("Distinct images are available only for test set.")
-        raise NotImplementedError
-
-    def len_test_distinct_images(self) -> int:
-        if self.datatype != 'test':
-            raise ValueError("Distinct images are available only for test set.")
-        return sum(len(imgs) for imgs in self.distinct_images.values())

@@ -120,9 +120,6 @@ class AP10KDataset(CorrespondenceDataset):
         with open(processed_json, "r", encoding="utf-8") as f:
             self.ann_files = f.read().splitlines()
 
-        if self.datatype == 'test':
-            self._load_distinct_images()
-
     def _load_annotation(self, idx):
         ann = json.loads(self.ann_files[idx])
         ann["pair_id"] = idx
@@ -353,19 +350,9 @@ class AP10KDataset(CorrespondenceDataset):
 
         print(f"[CROSS-FAMILY] Total pairs: {total_written}")
 
-    def _load_distinct_images(self):
+    def get_categories(self) -> set:
+        categories = set()
         for line in self.ann_files:
-            rec = json.loads(line)
-            src_imname = rec["src_imname"]
-            trg_imname = rec["trg_imname"]
-            self.distinct_images['all'].add(src_imname)
-            self.distinct_images['all'].add(trg_imname)
-
-    def iter_test_distinct_images(self):
-        if self.datatype != 'test':
-            raise ValueError("Distinct images are available only for test set.")
-
-        for img_name in self.distinct_images['all']:
-            img_tensor = self._get_image(img_name)
-            img_size = img_tensor.size()
-            yield img_name, img_tensor, img_size
+            ann = json.loads(line)
+            categories.add(ann['category'])
+        return categories

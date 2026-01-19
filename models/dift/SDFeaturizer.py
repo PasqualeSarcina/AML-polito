@@ -44,6 +44,12 @@ class SDFeaturizer:
 
             return cat2prompt_embeds
 
+    def encode_null_prompt(self):
+        with torch.no_grad():
+            prompt = ""
+            prompt_embeds = self._encode_prompt_embeds(prompt)  # [1, 77, dim]
+            return prompt_embeds
+
     def _encode_prompt_embeds(self, prompt: str):
         # Tokenizza anche la stringa vuota e produce embeddings validi [1, 77, dim]
         text_inputs = self.pipe.tokenizer(

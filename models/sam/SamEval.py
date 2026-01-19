@@ -72,6 +72,8 @@ class SamEval:
 
     def _compute_features(self, img_tensor: torch.Tensor, img_size: torch.Size, img_name: str,
                           category: str) -> torch.Tensor:
+        if self.dataset_name == "ap-10k":
+            category = "all"
         if img_name in self.processed_img[category]:
             # Carica featuremap salvata
             img_emb = load_featuremap(img_name, self.feat_dir, self.device)  # [C,h',w']
@@ -107,7 +109,7 @@ class SamEval:
 
         return torch.stack([xf, yf], dim=1)  # (N,2) (x_idx,y_idx)
 
-    def _compute_distances(self) -> list[CorrespondenceResult]:
+    def evaluate(self) -> list[CorrespondenceResult]:
         results = []
 
         torch.cuda.empty_cache()
@@ -115,7 +117,7 @@ class SamEval:
             for batch in tqdm(
                     self.dataloader,
                     total=len(self.dataloader),
-                    desc=f"Elaborazione con SAM",
+                    desc=f"Computing correspondences with SAM on {self.dataset_name}",
                     smoothing=0.1,
                     mininterval=0.7,
                     maxinterval=2.0
@@ -235,10 +237,5 @@ class SamEval:
                         pck_threshold_0_2=batch["pck_threshold_0_2"]
                     )
                 )
-
-        return results
-
-    def evaluate(self) -> list[CorrespondenceResult]:
-        results = self._compute_distances()
 
         return results

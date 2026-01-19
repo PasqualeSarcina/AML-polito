@@ -1,5 +1,6 @@
 import gc
 import math
+from collections import defaultdict
 from pathlib import Path
 
 import torch
@@ -31,6 +32,10 @@ class DiftEval:
         self.feat_dir = Path(self.base_dir) / "data" / "features" / "dift"
 
         self._init_dataset()
+        self.processed_img = defaultdict(set)
+
+        categories = self.dataset.get_categories()
+        self.prompt_embeds = self.featurizer.encode_category_prompts(categories)
 
     def _init_dataset(self):
         match self.dataset_name:
@@ -73,27 +78,26 @@ class DiftEval:
         img = img.unsqueeze(0).repeat(ensemble_size, 1, 1, 1)  # (E,C,H',W')
         return img
 
-    def _compute_features(self):
-        categories = self.dataset.get_categories()
-        prompt_embeds = self.featurizer.encode_category_prompts(categories)
+    def _compute_features(self, img_tensor: torch.Tensor, img_name: str,
+                          category: str) -> torch.Tensor:
+        if self.dataset_name == "ap-10k":
+            category_opt = "all"
+        else:
+            category_opt = category
+        if img_name in self.processed_img[category_opt]:
+            unet_ft = load_featuremap(img_name, self.feat_dir, self.device)
+            return unet_ft
 
-        print("Saving features to:", self.feat_dir)
+        img_tensor_resized = self._resize_image(img_tensor)  # (E,C,H',W')
+        prompt_embed = self.prompt_embeds[category_opt]  # (1,77,dim)
 
-        with torch.no_grad():
-            for img_name, img_tensor, img_size, category in tqdm(
-                    self.dataset.iter_test_distinct_images(),
-                    total=self.dataset.len_test_distinct_images(),
-                    desc="Generating embeddings"
-            ):
-                img_tensor_resized = self._resize_image(img_tensor)  # (E,C,H',W')
-                prompt_embed = prompt_embeds[category]  # (1,77,dim)
-
-                unet_ft = self.featurizer.forward(
-                    img_tensor=img_tensor_resized,
-                    prompt_embed=prompt_embed
-                )  # (1,c,h,w)
-
-                save_featuremap(unet_ft, img_name, self.feat_dir)
+        unet_ft = self.featurizer.forward(
+            img_tensor=img_tensor_resized,
+            prompt_embed=prompt_embed
+        )  # (1,c,h,w)
+        save_featuremap(unet_ft, img_name, self.feat_dir)
+        self.processed_img[category_opt].add(img_name)
+        return unet_ft
 
     @staticmethod
     def _kp_src_to_featmap(
@@ -149,7 +153,7 @@ class DiftEval:
 
         return torch.stack([x_idx, y_idx], dim=1)  # (N,2) (x_idx,y_idx)
 
-    def _compute_distances(self) -> list[CorrespondenceResult]:
+    def evaluate(self) -> list[CorrespondenceResult]:
         results = []
 
         with torch.no_grad():
@@ -166,8 +170,8 @@ class DiftEval:
                 src_imname = batch["src_imname"]
                 trg_imname = batch["trg_imname"]
 
-                src_ft = load_featuremap(src_imname, self.feat_dir, self.device)  # [C,hs,ws]
-                trg_ft = load_featuremap(trg_imname, self.feat_dir, self.device)  # [C,ht,wt]
+                src_ft = self._compute_features(batch["src_img"], batch["src_imname"], category)
+                trg_ft = self._compute_features(batch["trg_img"], batch["trg_imname"], category)
 
                 # Keypoints & metadata
                 src_kps = batch["src_kps"].to(self.device)  # [N,2]
@@ -244,18 +248,4 @@ class DiftEval:
                         pck_threshold_0_2=pck_thr_0_2
                     )
                 )
-        return results
-
-    def evaluate(self) -> list[CorrespondenceResult]:
-        # Step 1: compute features for all distinct images in the dataset
-        self._compute_features()
-
-        # free memory
-        self.featurizer = None
-        torch.cuda.empty_cache()
-        gc.collect()
-
-        # Step 2: compute distances for all image pairs in the dataset
-        results = self._compute_distances()
-
         return results

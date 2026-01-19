@@ -25,8 +25,12 @@ def build_parser():
     dift.add_argument("--fuse-dino", type=bool, required=False, help="path to custom weights")
 
     win_soft_argmax = parser.add_argument_group('win_soft_argmax')
-    win_soft_argmax.add_argument('--win-soft-argmax', action='store_true', default=True,
-                                 help='Use windowed soft argmax for correspondence regression')
+    win_soft_argmax.add_argument(
+        '--win-soft-argmax',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help='Use windowed soft argmax for correspondence regression',
+    )
     win_soft_argmax.add_argument('--wsam-win-size', type=int, default=5, help='Window size for windowed soft argmax')
     win_soft_argmax.add_argument('--wsam-beta', type=float, default=50.0,
                                  help='Inverse temperature for windowed soft argmax')
@@ -38,8 +42,8 @@ def build_parser():
 
 
 def main():
-    print("Starting evaluation...")
     args = build_parser().parse_args()
+    print("Starting evaluation...")
     using_colab = 'google.colab' in str(get_ipython())
     args.using_colab = using_colab
 
@@ -71,6 +75,7 @@ def main():
     correct = compute_correct_per_category(results)
     compute_pckt_keypoints(correct)
     compute_pckt_images(correct)
+
 
 if __name__ == "__main__":
     main()

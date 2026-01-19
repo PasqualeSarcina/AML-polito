@@ -23,9 +23,6 @@ class PFWillowDataset(CorrespondenceDataset):
             reader = csv.DictReader(f)
             self.ann_files = list(reader)
 
-        if self.datatype == 'test':
-            self._load_distinct_images()
-
     def _load_annotation(self, idx):
         r""" Loads the annotation of the pair with index idx """
         pair_info = self.ann_files[idx]
@@ -69,19 +66,9 @@ class PFWillowDataset(CorrespondenceDataset):
             raise ValueError("PF-Willow requires the category to build the image path.")
         return os.path.join(self.pfwillow_dir, "PF-dataset", category, imname)
 
-    def _load_distinct_images(self):
+    def get_categories(self) -> set:
+        categories = set()
         for line in self.ann_files:
             category = line['imageA'].split('/')[1]
-            src = line['imageA'].split('/')[-1]
-            trg = line['imageB'].split('/')[-1]
-            self.distinct_images[category].add(src)
-            self.distinct_images[category].add(trg)
-
-    def iter_test_distinct_images(self):
-        if self.datatype != 'test':
-            raise ValueError("Distinct images are available only for test set.")
-
-        for img_name in self.distinct_images['all']:
-            img_tensor = self._get_image(img_name, category=category)
-            img_size = img_tensor.size()
-            yield img_name, img_tensor, img_size
+            categories.add(category)
+        return categories
