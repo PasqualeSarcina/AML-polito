@@ -1,3 +1,4 @@
+import gc
 import math
 from pathlib import Path
 
@@ -150,7 +151,6 @@ class DiftEval:
 
     def _compute_distances(self) -> list[CorrespondenceResult]:
         results = []
-        torch.cuda.empty_cache()
 
         with torch.no_grad():
             for batch in tqdm(
@@ -249,6 +249,11 @@ class DiftEval:
     def evaluate(self) -> list[CorrespondenceResult]:
         # Step 1: compute features for all distinct images in the dataset
         self._compute_features()
+
+        # free memory
+        self.featurizer = None
+        torch.cuda.empty_cache()
+        gc.collect()
 
         # Step 2: compute distances for all image pairs in the dataset
         results = self._compute_distances()

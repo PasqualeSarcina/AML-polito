@@ -18,7 +18,11 @@ class SDFeaturizer:
         onestep_pipe.scheduler = DDIMScheduler.from_pretrained(sd_id, subfolder="scheduler")
         onestep_pipe = onestep_pipe.to(self.device)
         onestep_pipe.enable_attention_slicing()
-        #onestep_pipe.enable_xformers_memory_efficient_attention()
+        try:
+            import xformers
+            onestep_pipe.enable_xformers_memory_efficient_attention()
+        except:
+            print("xformers is not installed, running without it.")
         self.pipe = onestep_pipe
 
     def encode_category_prompts(self, cat_list) -> dict:
