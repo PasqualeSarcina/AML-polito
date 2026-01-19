@@ -81,20 +81,6 @@ class Dinov2Eval:
         x = img.unsqueeze(0)  # (1,C,H,W)
         x = torch.nn.functional.interpolate(x, size=out_dim, mode="bilinear", align_corners=False)
 
-        # Assicura float32
-        if x.dtype != torch.float32:
-            x = x.float()
-
-        # Porta in [0,1] se sembra 0..255
-        # (se già in 0..1 non cambia praticamente nulla)
-        if x.max() > 1.5:
-            x = x / 255.0
-
-        # Normalize ImageNet
-        mean = x.new_tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
-        std = x.new_tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
-        x = (x - mean) / std
-
         return x
 
     def _compute_features(self, img_tensor: torch.Tensor, img_name: str,
