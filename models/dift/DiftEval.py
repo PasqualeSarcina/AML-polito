@@ -95,11 +95,10 @@ class DiftEval:
         unet_ft = self.featurizer.forward(
             img_tensor=img_tensor_resized,
             prompt_embed=prompt_embed,
-            ensemble_size=self.enseble_size
+            ensemble_size=int(self.enseble_size)
         )  # (1,c,h,w)
         save_featuremap(unet_ft, img_name, self.feat_dir)
         self.processed_img[category_opt].add(img_name)
-        print(unet_ft.size())
         return unet_ft
 
     @staticmethod
@@ -159,6 +158,7 @@ class DiftEval:
     def evaluate(self) -> list[CorrespondenceResult]:
         results = []
 
+        print("Using ensemble size:", self.enseble_size)
         with torch.no_grad():
             for batch in tqdm(
                     self.dataloader,
