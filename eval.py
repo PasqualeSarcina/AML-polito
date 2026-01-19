@@ -4,7 +4,7 @@ import os
 import torch
 from IPython import get_ipython
 
-from models import sam, dift
+from models import sam, dift, dinov2
 from utils.utils_results import compute_correct_per_category, compute_pckt_keypoints, compute_pckt_images
 
 
@@ -53,7 +53,7 @@ def main():
 
     match args.model:
         case 'dinov2':
-            raise NotImplementedError
+            model = dinov2.Dinov2Eval(args)
 
         case 'dinov3':
             raise NotImplementedError
