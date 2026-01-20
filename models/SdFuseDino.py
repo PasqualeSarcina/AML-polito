@@ -1,5 +1,6 @@
 import math
 from copy import deepcopy
+from itertools import islice
 from typing import List
 
 import torch
@@ -36,15 +37,17 @@ class SdFuseDino:
         self.dino_stride = 14  # DINO patch stride
         self.sd_stride = 16  # DIFT patch stride
 
-        self.sd_preproc = DiftPreProcess(out_dim=(self.featmap_size[0] * self.sd_stride, self.featmap_size[1] * self.sd_stride))
-        self.dino_preproc = Dinov2PreProcess(out_dim=(self.featmap_size[0] * self.dino_stride, self.featmap_size[1] * self.dino_stride))
+        self.sd_preproc = DiftPreProcess(
+            out_dim=(self.featmap_size[0] * self.sd_stride, self.featmap_size[1] * self.sd_stride))
+        self.dino_preproc = Dinov2PreProcess(
+            out_dim=(self.featmap_size[0] * self.dino_stride, self.featmap_size[1] * self.dino_stride))
 
         self._init_dataset()
 
     def _init_dataset(self):
         match self.dataset_name:
             case 'spair-71k':
-                self.dataset = SPairDataset(datatype='test',dataset_size='small')
+                self.dataset = SPairDataset(datatype='test', dataset_size='small')
             case 'pf-pascal':
                 self.dataset = PFPascalDataset(datatype='test')
             case 'pf-willow':
@@ -69,8 +72,10 @@ class SdFuseDino:
 
         dino_batch = deepcopy(batch)
         dino_batch = self.dino_preproc(dino_batch)
-        dino_src_featmap = self.dino.compute_features(dino_batch['src_img'], dino_batch['src_imname'], dino_batch['category'])
-        dino_trg_featmap = self.dino.compute_features(dino_batch['trg_img'], dino_batch['trg_imname'], dino_batch['category'])
+        dino_src_featmap = self.dino.compute_features(dino_batch['src_img'], dino_batch['src_imname'],
+                                                      dino_batch['category'])
+        dino_trg_featmap = self.dino.compute_features(dino_batch['trg_img'], dino_batch['trg_imname'],
+                                                      dino_batch['category'])
 
         # se includono CLS token (1 + 1369), rimuovilo
         if dino_src_featmap.ndim == 3 and dino_src_featmap.shape[1] == 1 + self.featmap_size[0] * self.featmap_size[1]:
@@ -78,16 +83,20 @@ class SdFuseDino:
         if dino_trg_featmap.ndim == 3 and dino_trg_featmap.shape[1] == 1 + self.featmap_size[0] * self.featmap_size[1]:
             dino_trg_featmap = dino_trg_featmap[:, 1:, :]
 
-        dino_src_featmap = dino_src_featmap.permute(0, 2, 1).reshape(1, dino_src_featmap.shape[2], self.featmap_size[0], self.featmap_size[1])
-        dino_trg_featmap = dino_trg_featmap.permute(0, 2, 1).reshape(1, dino_trg_featmap.shape[2], self.featmap_size[0], self.featmap_size[1])
+        dino_src_featmap = dino_src_featmap.permute(0, 2, 1).reshape(1, dino_src_featmap.shape[2], self.featmap_size[0],
+                                                                     self.featmap_size[1])
+        dino_trg_featmap = dino_trg_featmap.permute(0, 2, 1).reshape(1, dino_trg_featmap.shape[2], self.featmap_size[0],
+                                                                     self.featmap_size[1])
 
         return sd_src_featmap, sd_trg_featmap, dino_src_featmap, dino_trg_featmap
 
     def evaluate(self) -> List[CorrespondenceResult]:
         results = []
 
+        torch.cuda.empty_cache()
+        a = islice(self.dataloader, 10)
         with torch.no_grad():
-            for batch in tqdm(self.dataloader, total=len(self.dataloader),
+            for batch in tqdm(a, total=10,
                               desc=f"DIFT + DINOv2 Eval on {self.dataset_name}"):
                 sd_src_featmap, sd_trg_featmap, dino_src_featmap, dino_trg_featmap = self._compute_features(batch)
 
@@ -98,11 +107,8 @@ class SdFuseDino:
 
                 alpha = 0.5
 
-                w_sd = (alpha ** 0.5)
-                w_dino = ((1 - alpha) ** 0.5)
-
-                fuse_src = torch.cat([w_sd * sd_src_featmap, w_dino * dino_src_featmap], dim=1)
-                fuse_trg = torch.cat([w_sd * sd_trg_featmap, w_dino * dino_trg_featmap], dim=1)
+                fuse_src = torch.cat([alpha * sd_src_featmap, alpha * dino_src_featmap], dim=1)
+                fuse_trg = torch.cat([alpha * sd_trg_featmap, alpha * dino_trg_featmap], dim=1)
 
                 batch = self.sd_preproc(batch)
 
@@ -121,13 +127,19 @@ class SdFuseDino:
                     if torch.isnan(kp_src).any() or torch.isnan(kp_trg).any():
                         continue
 
+                    x_idx, y_idx = pixel_to_patch_idx(kp_src, stride=self.sd_stride, grid_hw=self.featmap_size,
+                                                      img_hw=(self.featmap_size[0] * self.sd_stride,
+                                                              self.featmap_size[1] * self.sd_stride))
+
+                    print(x_idx, y_idx)
                     # ---- SRC pixel(768) -> token idx (48x48) ----
-                    x_idx, y_idx = pixel_to_patch_idx(
+                    x_idx, y_idx = self.pixel_to_patch_idx_norm(
                         kp_src,
-                        stride=self.sd_stride,
-                        grid_hw=self.featmap_size,
-                        img_hw=(self.featmap_size[0] * self.sd_stride, self.featmap_size[1] * self.sd_stride)
+                        grid_hw=self.featmap_size,  # (48,48)
+                        img_hw=(768, 768)  # spazio in cui vive kp_src
                     )
+
+                    print(x_idx, y_idx)
 
                     # ---- src feature vector ----
                     src_vec = fuse_src[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
@@ -166,6 +178,29 @@ class SdFuseDino:
 
             return results
 
+    @staticmethod
+    def pixel_to_patch_idx_norm(kp_xy, grid_hw, img_hw):
+        """
+        kp_xy: tensor (2,) in (x,y) nello spazio img_hw
+        grid_hw: (Hgrid, Wgrid) es. (48,48)
+        img_hw: (Himg, Wimg) es. (768,768) oppure (672,672) ecc.
+        return: (x_idx, y_idx) int
+        """
+        Hgrid, Wgrid = grid_hw
+        Himg, Wimg = img_hw
 
+        x = float(kp_xy[0].item())
+        y = float(kp_xy[1].item())
 
+        # clamp pixel
+        x = max(0.0, min(Wimg - 1.0, x))
+        y = max(0.0, min(Himg - 1.0, y))
 
+        # normalized -> grid
+        x_idx = int((x / Wimg) * Wgrid)
+        y_idx = int((y / Himg) * Hgrid)
+
+        # clamp grid
+        x_idx = max(0, min(Wgrid - 1, x_idx))
+        y_idx = max(0, min(Hgrid - 1, y_idx))
+        return x_idx, y_idx
