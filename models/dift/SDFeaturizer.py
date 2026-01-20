@@ -91,7 +91,7 @@ class SDFeaturizer:
         if img_tensor is not None:
             img_tensor = img_tensor.cuda()  # ensem, c, h, w
 
-        if up_ft_index is not list:
+        if not isinstance(up_ft_index, list):
             up_ft_index = [up_ft_index]
         prompt_embed = prompt_embed.repeat(ensemble_size, 1, 1).to(self.device)
         unet_ft_all = self.pipe(
