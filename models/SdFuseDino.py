@@ -115,7 +115,8 @@ class SdFuseDino:
                 src_kps = batch["src_kps"].to(self.device)  # (N,2) in 768
                 trg_kps = batch["trg_kps"].to(self.device)  # (N,2) in 768
 
-                C = fuse_src.shape[1]
+                C_sd = sd_src_featmap.shape[1]
+                C_dino = dino_src_featmap.shape[1]
 
                 distances_this_image: list[float] = []
 
@@ -123,8 +124,6 @@ class SdFuseDino:
                 for i in range(n_kps):
                     kp_src = src_kps[i]  # (x,y) in 768
                     kp_trg = trg_kps[i]  # (x,y) in 768
-
-                    print("input kp src:", kp_src)
 
                     if torch.isnan(kp_src).any() or torch.isnan(kp_trg).any():
                         continue
@@ -137,8 +136,8 @@ class SdFuseDino:
                     )
 
                     # ---- src feature vector ----
-                    src_vec_sd = sd_src_featmap[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
-                    src_vec_dino = dino_src_featmap[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
+                    src_vec_sd = sd_src_featmap[0, :, y_idx, x_idx].view(C_sd, 1, 1)  # [C,1,1]
+                    src_vec_dino = dino_src_featmap[0, :, y_idx, x_idx].view(C_dino, 1, 1)  # [C,1,1]
 
                     # ---- similarity map in token space (48x48) ----
                     sim2d_sd = torch.nn.functional.cosine_similarity(sd_trg_featmap[0], src_vec_sd, dim=0)  # [48,48]
