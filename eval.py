@@ -33,8 +33,8 @@ def build_parser():
         default=True,
         help='Use windowed soft argmax for correspondence regression',
     )
-    win_soft_argmax.add_argument('--wsam-win-size', type=int, default=5, help='Window size for windowed soft argmax')
-    win_soft_argmax.add_argument('--wsam-beta', type=float, default=50.0,
+    win_soft_argmax.add_argument('--wsam-win-size', type=int, default=3, help='Window size for windowed soft argmax')
+    win_soft_argmax.add_argument('--wsam-beta', type=float, default=20.0,
                                  help='Inverse temperature for windowed soft argmax')
 
     dataset = parser.add_argument('--dataset', type=str, default='spair-71k',

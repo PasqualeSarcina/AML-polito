@@ -57,22 +57,26 @@ class CorrespondenceDataset(Dataset):
 
         sample['src_imname'] = annotation["src_imname"]
         sample['src_img'] = src_img
-        sample['src_imsize'] = src_img.size()
 
         sample['trg_imname'] = annotation["trg_imname"]
         sample['trg_img'] = trg_img
-        sample['trg_imsize'] = trg_img.size()
+
+        sample['src_bndbox'] = annotation["src_bndbox"]
+        sample['trg_bndbox'] = annotation["trg_bndbox"]
 
         # Key-points
         sample['src_kps'] = torch.tensor(annotation['src_kps'], dtype=torch.float32)
         sample['trg_kps'] = torch.tensor(annotation['trg_kps'], dtype=torch.float32)
 
+        if self.transform:
+            sample = self.transform(sample)
+
+        sample['src_imsize'] = src_img.size()
+        sample['trg_imsize'] = trg_img.size()
+
         sample['pck_threshold_0_05'] = get_pckthres(annotation['trg_bndbox'], 0.05)
         sample['pck_threshold_0_1'] = get_pckthres(annotation['trg_bndbox'], 0.1)
         sample['pck_threshold_0_2'] = get_pckthres(annotation['trg_bndbox'], 0.2)
-
-        if self.transform:
-            sample = self.transform(sample)
 
         return sample
 

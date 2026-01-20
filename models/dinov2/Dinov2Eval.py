@@ -9,7 +9,8 @@ from data.ap10k import AP10KDataset
 from data.pfpascal import PFPascalDataset
 from data.pfwillow import PFWillowDataset
 from data.spair import SPairDataset
-from data.transform import ImageNetNorm
+from models.dinov2.PreProcess import PreProcess
+from utils.soft_argmax_window import soft_argmax_window
 from utils.utils_correspondence import argmax
 from utils.utils_featuremaps import save_featuremap, load_featuremap
 from utils.utils_results import CorrespondenceResult
@@ -47,41 +48,21 @@ class Dinov2Eval:
         self.model = model.to(self.device).eval()
 
     def _init_dataset(self):
+        transform = PreProcess(out_dim=(518, 518))
         match self.dataset_name:
             case 'spair-71k':
-                self.dataset = SPairDataset(datatype='test', transform=ImageNetNorm(['src_img', 'trg_img']),
-                                            dataset_size='large')
+                self.dataset = SPairDataset(datatype='test', transform=transform,dataset_size='large')
             case 'pf-pascal':
-                self.dataset = PFPascalDataset(datatype='test', transform=ImageNetNorm(['src_img', 'trg_img']))
+                self.dataset = PFPascalDataset(datatype='test', transform=transform)
             case 'pf-willow':
-                self.dataset = PFWillowDataset(datatype='test', transform=ImageNetNorm(['src_img', 'trg_img']))
+                self.dataset = PFWillowDataset(datatype='test', transform=transform)
             case 'ap-10k':
-                self.dataset = AP10KDataset(datatype='test', transform=ImageNetNorm(['src_img', 'trg_img']))
+                self.dataset = AP10KDataset(datatype='test', transform=transform)
 
         def collate_single(batch_list):
             return batch_list[0]
 
         self.dataloader = DataLoader(self.dataset, num_workers=4, batch_size=1, collate_fn=collate_single)
-
-    @staticmethod
-    def _preprocess_tensor(img: torch.Tensor, out_dim: tuple[int, int] = (518, 518)) -> torch.Tensor:
-        """
-        Preprocessing completo:
-        - input: img CHW, float32, range tipico 0..255
-        - resize stretch a out_dim con bilinear align_corners=False
-        - /255
-        - Normalize ImageNet
-        - output: (1, C, out_h, out_w)
-        """
-        if img.ndim != 3:
-            raise ValueError(f"Expected img shape (C,H,W), got {tuple(img.shape)}")
-        if img.shape[0] != 3:
-            raise ValueError(f"Expected 3 channels (RGB), got C={img.shape[0]}")
-
-        x = img.unsqueeze(0)  # (1,C,H,W)
-        x = torch.nn.functional.interpolate(x, size=out_dim, mode="bilinear", align_corners=False)
-
-        return x
 
     def _compute_features(self, img_tensor: torch.Tensor, img_name: str,
                           category: str) -> torch.Tensor:
@@ -91,50 +72,11 @@ class Dinov2Eval:
             dict_out = load_featuremap(img_name, self.feat_dir, device=self.device)
             return dict_out
 
-        dict_out = self.model.forward_features(self._preprocess_tensor(img_tensor.to(self.device)))
+        dict_out = self.model.forward_features(img_tensor.to(self.device).unsqueeze(0))
         featmap = dict_out["x_norm_patchtokens"]
         self.processed_img[category].add(img_name)
         save_featuremap(featmap, img_name, self.feat_dir)
         return featmap
-
-    @staticmethod
-    def _resize_keypoints(
-            kps: torch.Tensor,
-            orig_img_size: torch.Tensor | tuple,
-            out_img_size: tuple[int, int] = (518, 518),
-    ) -> torch.Tensor:
-        out_h, out_w = out_img_size
-
-        # deduci H,W
-        if isinstance(orig_img_size, torch.Tensor):
-            size = orig_img_size
-            if size.numel() == 2:  # (H,W)
-                orig_h, orig_w = size[0], size[1]
-            elif size.numel() == 3:  # (C,H,W) default
-                orig_h, orig_w = size[1], size[2]
-            else:
-                raise ValueError(f"orig_img_size non supportato: {tuple(size.shape)}")
-        else:
-            size = tuple(orig_img_size)
-            if len(size) == 2:
-                orig_h, orig_w = size
-            elif len(size) == 3:
-                _, orig_h, orig_w = size
-            else:
-                raise ValueError(f"orig_img_size non supportato: {size}")
-
-        k = kps.clone().to(dtype=torch.float32)
-
-        orig_h = torch.as_tensor(orig_h, device=k.device, dtype=torch.float32)
-        orig_w = torch.as_tensor(orig_w, device=k.device, dtype=torch.float32)
-
-        sx = float(out_w) / orig_w
-        sy = float(out_h) / orig_h
-
-        # replica align_corners=False (half-pixel)
-        k[:, 0] = (k[:, 0] + 0.5) * sx - 0.5
-        k[:, 1] = (k[:, 1] + 0.5) * sy - 0.5
-        return k
 
     def evaluate(self) -> list[CorrespondenceResult]:
         results = []
@@ -146,9 +88,10 @@ class Dinov2Eval:
 
         torch.cuda.empty_cache()
         with torch.no_grad():
-            for batch in tqdm(self.dataloader, total=len(self.dataloader), desc=f"Computing correspondeces with DINOv2 on {self.dataset_name}",
+            for batch in tqdm(self.dataloader, total=len(self.dataloader), desc=f"Computing correspondences with DINOv2 on {self.dataset_name}",
                               smoothing=0.1, mininterval=0.7, maxinterval=2.0):
                 category = batch["category"]
+
                 # featuremaps salvate su immagini resized 518x518
                 feats_src = self._compute_features(batch["src_img"], batch["src_imname"], category)
                 feats_trg = self._compute_features(batch["trg_img"], batch["trg_imname"], category)
@@ -159,49 +102,32 @@ class Dinov2Eval:
                 # se includono CLS token (1 + 1369), rimuovilo
                 if feats_src.ndim == 3 and feats_src.shape[1] == 1 + h_grid * w_grid:
                     feats_src = feats_src[:, 1:, :]
-                if feats_trg.ndim == 3 and feats_trg.shape[1] == 1 + h_grid * w_grid:
-                    feats_trg = feats_trg[:, 1:, :]
 
-                # keypoints ORIGINALI dal dataset
-                src_kps_orig = batch["src_kps"].to(self.device)  # (N,2) in pixel originali
-                trg_kps_orig = batch["trg_kps"].to(self.device)  # (N,2) in pixel originali
-
-                # SRC originale -> 518 (coerente con align_corners=False)
-                src_kps_518 = self._resize_keypoints(src_kps_orig, batch["src_imsize"], (out_h, out_w))
-
-                # size originale target (per inversione 518->originale)
-                tsize = batch["trg_imsize"]
-                Ht = float(tsize[1])
-                Wt = float(tsize[2])
-
-                sx_t = out_w / Wt
-                sy_t = out_h / Ht
+                # keypoints
+                src_kps = batch["src_kps"].to(self.device)  # (N,2) in resized 518x518
+                trg_kps = batch["trg_kps"].to(self.device)  # (N,2) in resized 518x518
 
                 distances_this_image: list[float] = []
 
                 # loop keypoints
-                N = min(src_kps_518.shape[0], trg_kps_orig.shape[0])
-                for i in range(N):
-                    kp_src_518 = src_kps_518[i]
-                    kp_trg_o = trg_kps_orig[i]
+                n_kps = min(src_kps.shape[0], trg_kps.shape[0])
+                for i in range(n_kps):
+                    kp_src = src_kps[i]
+                    kp_trg = trg_kps[i]
 
                     # skip keypoints "invalidi" tipici (es. -1, -1) o NaN
-                    if torch.isnan(kp_src_518).any() or torch.isnan(kp_trg_o).any():
-                        continue
-                    if kp_src_518[0] < 0 or kp_src_518[1] < 0:
-                        continue
-                    if kp_trg_o[0] < 0 or kp_trg_o[1] < 0:
+                    if torch.isnan(kp_src).any() or torch.isnan(kp_trg).any():
                         continue
 
                     # --- SRC kp (in 518) -> patch index ---
-                    x_518 = float(kp_src_518[0].item())
-                    y_518 = float(kp_src_518[1].item())
+                    x_kp_src = float(kp_src[0].item())
+                    y_kp_src = float(kp_src[1].item())
 
-                    x_518 = max(0.0, min(out_w - 1.0, x_518))
-                    y_518 = max(0.0, min(out_h - 1.0, y_518))
+                    x_kp_src = max(0.0, min(out_w - 1.0, x_kp_src))
+                    y_kp_src = max(0.0, min(out_h - 1.0, y_kp_src))
 
-                    x_patch = int(x_518 // patch_size)
-                    y_patch = int(y_518 // patch_size)
+                    x_patch = int(x_kp_src // patch_size)
+                    y_patch = int(y_kp_src // patch_size)
                     x_patch = min(max(0, x_patch), w_grid - 1)
                     y_patch = min(max(0, y_patch), h_grid - 1)
 
@@ -216,31 +142,20 @@ class Dinov2Eval:
                     )  # (1369,)
                     sim_2d = sim_1d.view(h_grid, w_grid)  # (37,37)
 
-                    # --- SAM-like: upsample similarity map -> 518x518 e argmax lì ---
-                    sim_r = torch.nn.functional.interpolate(
-                        sim_2d[None, None],  # (1,1,37,37)
-                        size=(out_h, out_w),
-                        mode="bilinear",
-                        align_corners=False
-                    )[0, 0]  # (518,518)
-
                     if self.win_soft_argmax:
-                        x_r, y_r = argmax(sim_r, window_size=self.wsam_win_size, beta=self.wsam_beta)  # ritorna x,y
+                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=self.wsam_win_size, temperature=self.wsam_beta)  # ritorna x,y
                     else:
-                        x_r, y_r = argmax(sim_r, window_size=1)
+                        y_pred_patch, x_pred_patch = argmax(sim_2d, window_size=1)
 
-                    x_r = float(x_r.item()) if isinstance(x_r, torch.Tensor) else float(x_r)
-                    y_r = float(y_r.item()) if isinstance(y_r, torch.Tensor) else float(y_r)
+                    # --- 518 -> ORIG target  ---
+                    x_pred = (x_pred_patch + 0.5) * patch_size - 0.5
+                    y_pred = (y_pred_patch + 0.5) * patch_size - 0.5
 
-                    # --- 518 -> ORIG target (inverse half-pixel, align_corners=False) ---
-                    x_pred_orig = (x_r + 0.5) / sx_t - 0.5
-                    y_pred_orig = (y_r + 0.5) / sy_t - 0.5
+                    gt_x = float(kp_trg[0].item())
+                    gt_y = float(kp_trg[1].item())
 
-                    gt_x = float(kp_trg_o[0].item())
-                    gt_y = float(kp_trg_o[1].item())
-
-                    dx = x_pred_orig - gt_x
-                    dy = y_pred_orig - gt_y
+                    dx = x_pred - gt_x
+                    dy = y_pred - gt_y
                     dist = math.sqrt(dx * dx + dy * dy)
                     distances_this_image.append(dist)
 
@@ -248,7 +163,6 @@ class Dinov2Eval:
                     CorrespondenceResult(
                         category=category,
                         distances=distances_this_image,
-                        # soglie già in pixel ORIGINALI (coerenti con dist)
                         pck_threshold_0_05=batch["pck_threshold_0_05"],
                         pck_threshold_0_1=batch["pck_threshold_0_1"],
                         pck_threshold_0_2=batch["pck_threshold_0_2"],
@@ -256,55 +170,3 @@ class Dinov2Eval:
                 )
 
         return results
-
-    @staticmethod
-    def soft_argmax_window(sim_map_2d, window_radius=3, temperature=20):
-        """
-        Args:
-            sim_map_2d: Tensor shape (H, W) containing similarity scores.
-            window_radius: How many neighbors to look at (e.g., 3).
-            temperature: Sharpening factor. Higher = closer to hard argmax.
-        Returns:
-            y_soft, x_soft: Float coordinates on the grid.
-        """
-        H, W = sim_map_2d.shape
-
-        # 1. Find the Hard Peak (Integer)
-        flattened = sim_map_2d.view(-1)
-        idx = torch.argmax(flattened)
-        y_hard = idx // W
-        x_hard = idx % W
-
-        # 2. Define the Window around the peak
-        y_min = max(0, y_hard - window_radius)
-        y_max = min(H, y_hard + window_radius + 1)
-        x_min = max(0, x_hard - window_radius)
-        x_max = min(W, x_hard + window_radius + 1)
-
-        # 3. Crop the window
-        window = sim_map_2d[y_min:y_max, x_min:x_max]
-
-        # 4. Convert Scores to Probabilities (Softmax)
-        # We subtract max for numerical stability, then multiply by temperature
-        # Cosine similarity is usually -1 to 1. We scale it up so Softmax isn't too flat.
-        # 1. Flatten the window to 1D so Softmax considers ALL pixels together
-        flat_input = ((window - window.max()) * temperature).view(-1)
-
-        # 2. Apply Softmax on the flat array (dim=0)
-        flat_weights = torch.nn.functional.softmax(flat_input, dim=0)
-
-        # 3. Reshape back to the original 2D square shape
-        weights = flat_weights.view(window.shape)
-        # 5. Calculate Center of Mass (Weighted Sum)
-        # Create a grid of coordinates for the window
-        device = sim_map_2d.device
-        local_y, local_x = torch.meshgrid(
-            torch.arange(y_min, y_max, device=device).float(),
-            torch.arange(x_min, x_max, device=device).float(),
-            indexing='ij'
-        )
-
-        y_soft = torch.sum(weights * local_y)
-        x_soft = torch.sum(weights * local_x)
-
-        return y_soft, x_soft
