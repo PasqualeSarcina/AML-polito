@@ -54,32 +54,6 @@ class DiftEval:
 
         self.dataloader = DataLoader(self.dataset, num_workers=4, batch_size=1, collate_fn=collate_single)
 
-    @staticmethod
-    def _resize_image(
-            sample: torch.Tensor,
-            ensemble_size: int,
-            img_output_size: tuple[int, int] = (768, 768),  # (H, W)
-
-    ) -> torch.Tensor:
-        """
-        sample: (C,H,W) con valori 0..255 (uint8 o float)
-        return: (E,C,H',W') normalizzata in [-1,1]
-        """
-        if sample.ndim != 3:
-            raise ValueError(f"`sample` deve essere (C,H,W). Trovato shape={tuple(sample.shape)}")
-
-        resize = transforms.Resize(
-            img_output_size,
-            interpolation=transforms.InterpolationMode.BICUBIC,
-            antialias=True
-        )
-
-        img = resize(sample)  # (C,H',W')
-        img = img.to(torch.float32)
-        img = (img / 255.0 - 0.5) * 2.0  # [-1,1]
-        img = img.unsqueeze(0).repeat(ensemble_size, 1, 1, 1)  # (E,C,H',W')
-        return img
-
     def _compute_features(self, img_tensor: torch.Tensor, img_name: str,
                           category: str) -> torch.Tensor:
         if self.dataset_name == "ap-10k":
@@ -102,153 +76,84 @@ class DiftEval:
         self.processed_img[category_opt].add(img_name)
         return unet_ft
 
-    @staticmethod
-    def _kp_src_to_featmap(
-            kp_orig: torch.Tensor,
-            orig_hw: tuple[int, int],  # (H, W) originali
-            feat_hw: tuple[int, int] = (48, 48),
-            pre_hw: tuple[int, int] = (768, 768),
-    ) -> torch.Tensor:
-        """
-        Converte keypoint originali (pixel) -> indici sulla feature map (x_idx, y_idx).
-
-        Args:
-            kp_orig: (N,2) keypoint in pixel sull'immagine originale, ordine (x,y)
-            orig_hw: (H,W) dell'immagine originale
-            feat_hw: (hv,wv) della feature map (es. 48x48)
-            pre_hw:  (Hpre,Wpre) della preprocessata (es. 768x768)
-
-        Returns:
-            (N,2) indici featuremap in ordine (x_idx, y_idx)
-        """
-        if kp_orig.ndim != 2 or kp_orig.shape[-1] != 2:
-            raise ValueError(f"`kp_orig` deve essere (N,2). Trovato shape={tuple(kp_orig.shape)}")
-
-        H, W = orig_hw
-        hv, wv = feat_hw
-        Hpre, Wpre = pre_hw
-
-        kp = kp_orig.to(torch.float32)
-
-        # -------------------------
-        # FASE 1) RESIZE (orig -> preprocess)
-        # -------------------------
-        sx_img = Wpre / W
-        sy_img = Hpre / H
-
-        # mapping coerente coi centri pixel: (x+0.5)*s - 0.5
-        x_pre = (kp[:, 0] + 0.5) * sx_img - 0.5
-        y_pre = (kp[:, 1] + 0.5) * sy_img - 0.5
-
-        # -------------------------
-        # FASE 2) TRASLAZIONE su FEATURE MAP (preprocess -> feat idx)
-        # -------------------------
-        sx_feat = Wpre / wv  # stride in preprocess (es. 16)
-        sy_feat = Hpre / hv  # stride in preprocess (es. 16)
-
-        # "center rule": token center a (i+0.5)*stride  => i ≈ x/stride - 0.5
-        x_idx = torch.round(x_pre / sx_feat - 0.5).long()
-        y_idx = torch.round(y_pre / sy_feat - 0.5).long()
-
-        # clamp ai limiti della feature map
-        x_idx = x_idx.clamp(0, wv - 1)
-        y_idx = y_idx.clamp(0, hv - 1)
-
-        return torch.stack([x_idx, y_idx], dim=1)  # (N,2) (x_idx,y_idx)
-
     def evaluate(self) -> list[CorrespondenceResult]:
         results = []
 
+        # input DIFT (dopo preprocess) e grid feature
+        OUT_H = OUT_W = 768
+        HV = WV = 48
+        PATCH = OUT_W // WV   # 768/48 = 16  (patch stride effettivo)
+
         with torch.no_grad():
-            for batch in tqdm(
-                    self.dataloader,
-                    total=len(self.dataloader),
-                    desc=f"DIFT Eval on {self.dataset_name}"
-            ):
+            for batch in tqdm(self.dataloader, total=len(self.dataloader),
+                              desc=f"DIFT Eval on {self.dataset_name}"):
+
                 category = batch["category"]
 
-                orig_size_src = tuple(batch["src_imsize"][-2:])  # (H, W)
-                orig_size_trg = tuple(batch["trg_imsize"][-2:])  # (H, W)
-
-                src_imname = batch["src_imname"]
-                trg_imname = batch["trg_imname"]
-
+                # features: [1,C,48,48]
                 src_ft = self._compute_features(batch["src_img"], batch["src_imname"], category)
                 trg_ft = self._compute_features(batch["trg_img"], batch["trg_imname"], category)
 
-                # Keypoints & metadata
-                src_kps = batch["src_kps"].to(self.device)  # [N,2]
-                trg_kps = batch["trg_kps"].to(self.device)
-                # [N,2]
-                pck_thr_0_05 = batch["pck_threshold_0_05"]
-                pck_thr_0_1 = batch["pck_threshold_0_1"]
-                pck_thr_0_2 = batch["pck_threshold_0_2"]
+                if src_ft.ndim == 3:  # [C,48,48] -> [1,C,48,48]
+                    src_ft = src_ft.unsqueeze(0)
+                if trg_ft.ndim == 3:
+                    trg_ft = trg_ft.unsqueeze(0)
 
-                # src_ft = nn.Upsample(size=orig_size_src, mode='bilinear')(src_ft)
-                # trg_ft = nn.Upsample(size=orig_size_trg, mode='bilinear')(trg_ft)
+                # keypoints già nello spazio 768×768
+                src_kps = batch["src_kps"].to(self.device)  # (N,2) in 768
+                trg_kps = batch["trg_kps"].to(self.device)  # (N,2) in 768
 
-                src_kps = self._kp_src_to_featmap(src_kps, orig_size_src)
-                # trg_kps = kp_src_to_featmap(trg_kps, orig_size_trg)
+                C = src_ft.shape[1]
+                distances_this_image: list[float] = []
 
-                distances_this_image = []
+                n_kps = min(src_kps.shape[0], trg_kps.shape[0])
+                for i in range(n_kps):
+                    kp_src = src_kps[i]   # (x,y) in 768
+                    kp_trg = trg_kps[i]   # (x,y) in 768
 
-                N_kps = src_kps.shape[0]
-                C = src_ft.shape[1]  # 1280
-                hv_t, wv_t = trg_ft.shape[-2:]  # 48,48
-
-                for i in range(N_kps):
-                    src_kp = src_kps[i]  # (x,y) originali
-                    trg_kp = trg_kps[i]  # (x,y) originali
-
-                    # se nel dataset possono esserci kp non validi, controlla qui
-                    if torch.isnan(src_kp).any() or torch.isnan(trg_kp).any():
+                    if torch.isnan(kp_src).any() or torch.isnan(kp_trg).any():
                         continue
 
-                    # 1) indice sulla featuremap (48x48) per il kp sorgente
-                    x_src_idx = int(src_kp[0].item())
-                    y_src_idx = int(src_kp[1].item())
+                    # ---- SRC pixel(768) -> token idx (48x48) ----
+                    x_idx = int(torch.floor(kp_src[0] / PATCH).item())
+                    y_idx = int(torch.floor(kp_src[1] / PATCH).item())
+                    x_idx = max(0, min(x_idx, WV - 1))
+                    y_idx = max(0, min(y_idx, HV - 1))
 
-                    # 2) vettore feature sorgente (C,1,1) per broadcasting
-                    src_vec = src_ft[0, :, y_src_idx, x_src_idx].view(C, 1, 1)
+                    # ---- src feature vector ----
+                    src_vec = src_ft[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
 
-                    # 3) mappa similarità su target (48,48)
-                    sim2d = torch.cosine_similarity(trg_ft[0], src_vec, dim=0)
+                    # ---- similarity map in token space (48x48) ----
+                    sim2d = torch.nn.functional.cosine_similarity(trg_ft[0], src_vec, dim=0)  # [48,48]
 
-                    sim_int = torch.nn.functional.interpolate(
-                        sim2d.unsqueeze(0).unsqueeze(0),
-                        size=(768, 768),
-                        mode="bilinear",
-                        align_corners=False
-                    ).squeeze(0).squeeze(0)
-
+                    # ---- pred token coords (y,x) ----
                     if self.win_soft_argmax:
-                        # windowed soft-argmax
-                        x_pre, y_pre = soft_argmax_window(
-                            sim_int,
+                        # la tua soft_argmax_window ritorna (y,x)
+                        y_tok, x_tok = soft_argmax_window(
+                            sim2d,
                             window_radius=self.wsam_win_size,
                             temperature=self.wsam_beta
                         )
                     else:
-                        # hard argmax
-                        x_pre, y_pre = soft_argmax_window(sim_int, window_radius=1)
+                        y_tok, x_tok = soft_argmax_window(sim2d, window_radius=1)
 
-                    Ht, Wt = orig_size_trg
-                    x_pred = x_pre * (Wt / 768)
-                    y_pred = y_pre * (Ht / 768)
+                    # ---- token -> pixel nello spazio 768 (centro patch) ----
+                    x_pred = (x_tok + 0.5) * PATCH - 0.5
+                    y_pred = (y_tok + 0.5) * PATCH - 0.5
 
-                    # distanza rispetto al GT (trg_point è (x,y))
-                    dist = math.sqrt((x_pred - trg_kp[0]) ** 2 + (y_pred - trg_kp[1]) ** 2)
+                    dx = x_pred - float(kp_trg[0].item())
+                    dy = y_pred - float(kp_trg[1].item())
+                    dist = math.sqrt(dx * dx + dy * dy)
                     distances_this_image.append(dist)
-
-                    del src_vec
 
                 results.append(
                     CorrespondenceResult(
                         category=category,
                         distances=distances_this_image,
-                        pck_threshold_0_05=pck_thr_0_05,
-                        pck_threshold_0_1=pck_thr_0_1,
-                        pck_threshold_0_2=pck_thr_0_2
+                        pck_threshold_0_05=batch["pck_threshold_0_05"],
+                        pck_threshold_0_1=batch["pck_threshold_0_1"],
+                        pck_threshold_0_2=batch["pck_threshold_0_2"]
                     )
                 )
+
         return results
