@@ -50,3 +50,33 @@ def plot_training_results(train_losses, val_losses, save_dir, n_layers, run_id):
     plt.savefig(os.path.join(save_dir, filename))
     print(f"📈 Grafico salvato come: {filename}")
     plt.close()
+
+    if __name__ == "__main__":
+        #4 TENTATIVO
+        #1 layer
+        train_losses = [4.68, 3.01, 1.98]
+        val_losses = [4.66, 5.69, 7.26]
+        save_dir = "results"
+        plot_training_results(train_losses, val_losses, save_dir, 1, "run_001")
+
+        #2 layers
+        train_losses = [4.1, 1.79, 0.90]
+        val_losses = [5.56, 8.22, 8.99]
+        plot_training_results(train_losses, val_losses, save_dir, 2, "run_002")
+
+        #5 TENTATIVO: SCHEDULER + NEW FORWARD
+        #1 layer
+        train_losses = [5.48, 4.20, 3.03, 2.11, 1.46]
+        val_losses = [4.98, 4.70, 5.56, 6.89, 7.44]
+        plot_training_results(train_losses, val_losses, save_dir, 1, "run_003")
+
+        #2 layers
+        train_losses = [5.16, 3.55, 2.21, 1.40, 0.87]
+        val_losses = [4.77, 5.31, 6.35, 7.76, 8.18]
+        plot_training_results(train_losses, val_losses, save_dir, 2, "run_004")
+
+        #6 TENTATIVO: COME 5 + BATCH SIZE 8 + SEED + NO OCCLUSION/TRUNCATION
+        #1 layer
+        train_losses = [5.30, 3.02, 1.54, 0.84, 0.55]
+        val_losses = [4.92, 6.32, 8.09, 8.68, 9.17]
+        plot_training_results(train_losses, val_losses, save_dir, 1, "run_005")

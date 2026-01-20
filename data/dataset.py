@@ -33,6 +33,7 @@ class SAMTransform(object):
             scale = scale_h
 
             img = F.interpolate(img.unsqueeze(0), size=(new_h, new_w), mode='bilinear', align_corners=False)[0]
+            
             img = (img - self.pixel_mean) / self.pixel_std
 
             pad_h = self.target_size - new_h

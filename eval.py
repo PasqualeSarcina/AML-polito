@@ -20,6 +20,8 @@ def evaluate_pck(model, dataloader, device, alpha=0.1):
     torch.cuda.empty_cache()
     gc.collect()
 
+    temperature = 20.0
+    window_size = 15
     #ACCUMULATORI GLOBALI (per keypoint)
     total_kps_global = 0
     correct_005_global = 0
@@ -58,7 +60,7 @@ def evaluate_pck(model, dataloader, device, alpha=0.1):
             trg_feats = extract_features(model, trg_img, model_type='sam')
 
             # 2. Calcola Corrispondenze
-            pred_kps = compute_correspondence(src_feats, trg_feats, src_kps, (img_H, img_W))
+            pred_kps = compute_correspondence(src_feats, trg_feats, src_kps, (img_H, img_W), temperature=temperature, window_size=window_size)
             pred_kps = pred_kps.to(device) 
             pred_kps_valid = pred_kps[kps_mask]
             trg_kps_valid = trg_kps[kps_mask]
