@@ -127,10 +127,10 @@ class SdFuseDino:
                     )
 
                     # ---- src feature vector ----
-                    fuse_src = fuse_src[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
+                    src_vec = fuse_src[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
 
                     # ---- similarity map in token space (48x48) ----
-                    sim2d = torch.nn.functional.cosine_similarity(fuse_trg[0], fuse_src, dim=0)  # [48,48]
+                    sim2d = torch.nn.functional.cosine_similarity(fuse_trg[0], src_vec, dim=0)  # [48,48]
 
                     # ---- pred token coords (y,x) ----
                     if self.win_soft_argmax:
