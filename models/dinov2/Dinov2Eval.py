@@ -64,7 +64,7 @@ class Dinov2Eval:
 
         self.dataloader = DataLoader(self.dataset, num_workers=4, batch_size=1, collate_fn=collate_single)
 
-    def _compute_features(self, img_tensor: torch.Tensor, img_name: str,
+    def compute_features(self, img_tensor: torch.Tensor, img_name: str,
                           category: str) -> torch.Tensor:
         if self.dataset_name == "ap-10k":
             category = "all"
@@ -93,8 +93,8 @@ class Dinov2Eval:
                 category = batch["category"]
 
                 # featuremaps salvate su immagini resized 518x518
-                feats_src = self._compute_features(batch["src_img"], batch["src_imname"], category) # Resized image
-                feats_trg = self._compute_features(batch["trg_img"], batch["trg_imname"], category) # Resized image
+                feats_src = self.compute_features(batch["src_img"], batch["src_imname"], category) # Resized image
+                feats_trg = self.compute_features(batch["trg_img"], batch["trg_imname"], category) # Resized image
 
                 feats_src = feats_src.to(self.device)
                 feats_trg = feats_trg.to(self.device)
@@ -102,6 +102,8 @@ class Dinov2Eval:
                 # se includono CLS token (1 + 1369), rimuovilo
                 if feats_src.ndim == 3 and feats_src.shape[1] == 1 + h_grid * w_grid:
                     feats_src = feats_src[:, 1:, :]
+                if feats_trg.ndim == 3 and feats_trg.shape[1] == 1 + h_grid * w_grid:
+                    feats_trg = feats_trg[:, 1:, :]
 
                 # keypoints
                 src_kps = batch["src_kps"].to(self.device)  # (N,2) in resized 518x518

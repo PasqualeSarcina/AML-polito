@@ -57,7 +57,7 @@ class DiftEval:
 
         self.dataloader = DataLoader(self.dataset, num_workers=4, batch_size=1, collate_fn=collate_single)
 
-    def _compute_features(self, img_tensor: torch.Tensor, img_name: str,
+    def compute_features(self, img_tensor: torch.Tensor, img_name: str,
                           category: str) -> torch.Tensor:
         if self.dataset_name == "ap-10k":
             category_opt = "all"
@@ -93,11 +93,13 @@ class DiftEval:
                 category = batch["category"]
 
                 # features: [1,C,48,48]
-                src_ft = self._compute_features(batch["src_img"], batch["src_imname"], category)
-                trg_ft = self._compute_features(batch["trg_img"], batch["trg_imname"], category)
+                src_ft = self.compute_features(batch["src_img"], batch["src_imname"], category)
+                trg_ft = self.compute_features(batch["trg_img"], batch["trg_imname"], category)
 
                 if src_ft.ndim == 3:  # [C,48,48] -> [1,C,48,48]
                     src_ft = src_ft.unsqueeze(0)
+                if trg_ft.ndim == 3:
+                    trg_ft = trg_ft.unsqueeze(0)
 
                 # keypoints già nello spazio 768×768
                 src_kps = batch["src_kps"].to(self.device)  # (N,2) in 768
