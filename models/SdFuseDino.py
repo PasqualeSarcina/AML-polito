@@ -107,8 +107,8 @@ class SdFuseDino:
 
                 alpha = 0.5
 
-                fuse_src = torch.cat([alpha * sd_src_featmap, alpha * dino_src_featmap], dim=1)
-                fuse_trg = torch.cat([alpha * sd_trg_featmap, alpha * dino_trg_featmap], dim=1)
+                #fuse_src = torch.cat([alpha * sd_src_featmap, alpha * dino_src_featmap], dim=1)
+                #fuse_trg = torch.cat([alpha * sd_trg_featmap, alpha * dino_trg_featmap], dim=1)
 
                 batch = self.sd_preproc(batch)
 
@@ -129,25 +129,22 @@ class SdFuseDino:
                     if torch.isnan(kp_src).any() or torch.isnan(kp_trg).any():
                         continue
 
-                    x_idx, y_idx = pixel_to_patch_idx(kp_src, stride=self.sd_stride, grid_hw=self.featmap_size,
-                                                      img_hw=(self.featmap_size[0] * self.sd_stride,
-                                                              self.featmap_size[1] * self.sd_stride))
-
-                    print("before",x_idx, y_idx)
-                    # ---- SRC pixel(768) -> token idx (48x48) ----
-                    x_idx, y_idx = self.pixel_to_patch_idx_norm(
+                    x_idx, y_idx = pixel_to_patch_idx(
                         kp_src,
-                        grid_hw=self.featmap_size,  # (48,48)
-                        img_hw=(768, 768)  # spazio in cui vive kp_src
+                        stride=self.sd_stride,
+                        grid_hw=self.featmap_size,
+                        img_hw=(self.featmap_size[0] * self.sd_stride, self.featmap_size[1] * self.sd_stride)
                     )
 
-                    print("after",x_idx, y_idx)
-
                     # ---- src feature vector ----
-                    src_vec = fuse_src[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
+                    src_vec_sd = sd_src_featmap[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
+                    src_vec_dino = dino_src_featmap[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
 
                     # ---- similarity map in token space (48x48) ----
-                    sim2d = torch.nn.functional.cosine_similarity(fuse_trg[0], src_vec, dim=0)  # [48,48]
+                    sim2d_sd = torch.nn.functional.cosine_similarity(sd_trg_featmap[0], src_vec_sd, dim=0)  # [48,48]
+                    sim2d_dino = torch.nn.functional.cosine_similarity(dino_trg_featmap[0], src_vec_dino, dim=0)  # [48,48]
+
+                    sim2d = alpha * sim2d_sd + (1 - alpha) * sim2d_dino
 
                     # ---- pred token coords (y,x) ----
                     if self.win_soft_argmax:
@@ -179,30 +176,3 @@ class SdFuseDino:
                 )
 
             return results
-
-    @staticmethod
-    def pixel_to_patch_idx_norm(kp_xy, grid_hw, img_hw):
-        """
-        kp_xy: tensor (2,) in (x,y) nello spazio img_hw
-        grid_hw: (Hgrid, Wgrid) es. (48,48)
-        img_hw: (Himg, Wimg) es. (768,768) oppure (672,672) ecc.
-        return: (x_idx, y_idx) int
-        """
-        Hgrid, Wgrid = grid_hw
-        Himg, Wimg = img_hw
-
-        x = float(kp_xy[0].item())
-        y = float(kp_xy[1].item())
-
-        # clamp pixel
-        x = max(0.0, min(Wimg - 1.0, x))
-        y = max(0.0, min(Himg - 1.0, y))
-
-        # normalized -> grid
-        x_idx = int((x / Wimg) * Wgrid)
-        y_idx = int((y / Himg) * Hgrid)
-
-        # clamp grid
-        x_idx = max(0, min(Wgrid - 1, x_idx))
-        y_idx = max(0, min(Hgrid - 1, y_idx))
-        return x_idx, y_idx
