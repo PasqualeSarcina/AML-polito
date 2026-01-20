@@ -64,11 +64,10 @@ class DiftEval:
             unet_ft = load_featuremap(img_name, self.feat_dir, self.device)
             return unet_ft
 
-        img_tensor_resized = self._resize_image(img_tensor, ensemble_size=self.enseble_size)  # (E,C,H',W')
         prompt_embed = self.prompt_embeds[category_opt]  # (1,77,dim)
 
         unet_ft = self.featurizer.forward(
-            img_tensor=img_tensor_resized,
+            img_tensor=img_tensor,
             prompt_embed=prompt_embed,
             ensemble_size=self.enseble_size
         )  # (1,c,h,w)
