@@ -14,7 +14,7 @@ def extract_features(model, img_tensor, model_type='sam'):
 
     return features
 
-def compute_correspondence(src_feats, trg_feats, src_kps, img_size):
+def compute_correspondence(src_feats, trg_feats, src_kps, img_size, temperature=20, window_size=15):
     """
     Calcola la similarità del coseno e trova il punto di match (punti 2 e 3 del PDF).
     """
