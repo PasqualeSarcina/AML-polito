@@ -12,7 +12,8 @@ from data.ap10k import AP10KDataset
 from data.pfpascal import PFPascalDataset
 from data.pfwillow import PFWillowDataset
 from data.spair import SPairDataset
-from utils.utils_correspondence import argmax
+from models.sam.PreProcess import PreProcess
+from utils.soft_argmax_window import soft_argmax_window
 from utils.utils_download import download
 from utils.utils_featuremaps import save_featuremap, load_featuremap
 from utils.utils_results import CorrespondenceResult
@@ -55,15 +56,16 @@ class SamEval:
         self.PATCH = int(self.predictor.model.image_encoder.patch_embed.proj.kernel_size[0])
 
     def _init_dataset(self):
+        transform = PreProcess(sam_transform=self.transform)
         match self.dataset_name:
             case 'spair-71k':
-                self.dataset = SPairDataset(datatype='test', transform=None, dataset_size='large')
+                self.dataset = SPairDataset(datatype='test', transform=transform, dataset_size='large')
             case 'pf-pascal':
-                self.dataset = PFPascalDataset(datatype='test', transform=None)
+                self.dataset = PFPascalDataset(datatype='test', transform=transform)
             case 'pf-willow':
-                self.dataset = PFWillowDataset(datatype='test', transform=None)
+                self.dataset = PFWillowDataset(datatype='test', transform=transform)
             case 'ap-10k':
-                self.dataset = AP10KDataset(datatype='test', transform=None)
+                self.dataset = AP10KDataset(datatype='test', transform=transform)
 
         def collate_single(batch_list):
             return batch_list[0]
@@ -79,35 +81,13 @@ class SamEval:
             img_emb = load_featuremap(img_name, self.feat_dir, self.device)  # [C,h',w']
             return img_emb
 
-        img_tensor = img_tensor.to(self.device).unsqueeze(0)  # [1,3,H,W]
-        orig_size = tuple(img_size[1:])  # (H,W)
-        resized = self.predictor.transform.apply_image_torch(img_tensor)  # [1,3,H',W']
-        self.predictor.set_torch_image(resized, orig_size)
+        img_tensor = img_tensor.to(self.device)  # [1,3,H,W]
+        self.predictor.set_torch_image(img_tensor, img_size)
         img_emb = self.predictor.get_image_embedding()[0]  # [C,h',w']
         self.processed_img[category].add(img_name)
         save_featuremap(img_emb, img_name, self.feat_dir)
 
         return img_emb
-
-    def _kps_src_to_featmap(self, kps_src: torch.Tensor, img_src_size: torch.Size):
-        img_h = int(img_src_size[-2])
-        img_w = int(img_src_size[-1])
-
-        # (N,2) coords nella resized (no padding)
-        coords = self.predictor.transform.apply_coords_torch(kps_src, (img_h, img_w))  # (N,2)
-
-        img_resized_h, img_resized_w = self.predictor.transform.get_preprocess_shape(img_h, img_w, self.IMG_SIZE)
-
-        xf = torch.floor(coords[:, 0] / self.PATCH).long()
-        yf = torch.floor(coords[:, 1] / self.PATCH).long()
-
-        wv = math.ceil(img_resized_w / self.PATCH)
-        hv = math.ceil(img_resized_h / self.PATCH)
-
-        xf = xf.clamp(0, wv - 1)
-        yf = yf.clamp(0, hv - 1)
-
-        return torch.stack([xf, yf], dim=1)  # (N,2) (x_idx,y_idx)
 
     def evaluate(self) -> list[CorrespondenceResult]:
         results = []
@@ -124,102 +104,81 @@ class SamEval:
             ):
                 category = batch["category"]
 
-                orig_size_src = batch["src_imsize"]  # torch.Size([C, Hs, Ws]) o simile
-                orig_size_trg = batch["trg_imsize"]  # torch.Size([C, Ht, Wt]) o simile
-
                 src_imname = batch["src_imname"]
                 trg_imname = batch["trg_imname"]
 
-                src_emb = self._compute_features(batch["src_img"], batch["src_imsize"], src_imname, category)
-                trg_emb = self._compute_features(batch["trg_img"], batch["trg_imsize"], trg_imname, category)
+                src_emb = self._compute_features(batch["src_img"], batch["src_orig_size"], src_imname, category)
+                trg_emb = self._compute_features(batch["trg_img"], batch["trg_orig_size"], trg_imname, category)
 
                 # Keypoints (N,2) in pixel originali, ordine (x,y)
                 src_kps = batch["src_kps"].to(self.device)
                 trg_kps = batch["trg_kps"].to(self.device)
 
-                # -------------------------
-                # Target: dimensioni originali + dimensioni resize (no padding)
-                # -------------------------
-                Ht = int(orig_size_trg[-2])
-                Wt = int(orig_size_trg[-1])
+                # Dimensioni originali (H,W) e resized (new_h,new_w) già nel batch
+                Hs_prime, Ws_prime = batch["src_resized_size"]
 
-                H_prime, W_prime = self.predictor.transform.get_preprocess_shape(
-                    Ht, Wt, self.predictor.transform.target_length
-                )
+                Ht_prime, Wt_prime = batch["trg_resized_size"]
 
-                # Regione valida in token (no padding)
-                hv_t = (H_prime + self.PATCH - 1) // self.PATCH
-                wv_t = (W_prime + self.PATCH - 1) // self.PATCH
+                # Regione valida in token-space (NO padding), con PATCH tipico SAM = 16
+                hv_s = (Hs_prime + self.PATCH - 1) // self.PATCH
+                wv_s = (Ws_prime + self.PATCH - 1) // self.PATCH
 
-                # -------------------------
-                # Prepara target flat sulla regione valida
-                # -------------------------
-                C_ft = trg_emb.shape[0]
-                trg_valid = trg_emb[:, :hv_t, :wv_t]  # [C, hv, wv]
+                hv_t = (Ht_prime + self.PATCH - 1) // self.PATCH
+                wv_t = (Wt_prime + self.PATCH - 1) // self.PATCH
+
+                # (opzionale) clamp su griglia encoder (di solito 1024/16 = 64)
+                grid = self.IMG_SIZE // self.PATCH  # es. 1024//16 = 64
+                hv_s = min(hv_s, grid)
+                wv_s = min(wv_s, grid)
+                hv_t = min(hv_t, grid)
+                wv_t = min(wv_t, grid)
+
+                # ---- taglia embeddings alla regione valida ----
+                # src_valid: [C, hv_s, wv_s], trg_valid: [C, hv_t, wv_t]
+                src_valid = src_emb[:, :hv_s, :wv_s]
+                trg_valid = trg_emb[:, :hv_t, :wv_t]
+
+                C_ft = trg_valid.shape[0]
                 trg_flat = trg_valid.permute(1, 2, 0).reshape(-1, C_ft)  # [Pvalid, C]
 
-                # -------------------------
-                # Mappa i keypoint SRC -> indici featuremap SRC (token space)
-                # (Assumo che kps_src_to_featmap ritorni (N,2) (x_idx, y_idx) long)
-                # -------------------------
-                src_kps_idx = self._kps_src_to_featmap(src_kps, orig_size_src)  # (N,2) (x_idx,y_idx)
-
-                N_kps = src_kps_idx.shape[0]
+                N_kps = src_kps.shape[0]
                 distances_this_image = []
-
-                # scala SAM (uniforme sul lato lungo)
-                if Wt >= Ht:
-                    scale = W_prime / Wt
-                else:
-                    scale = H_prime / Ht
 
                 # -------------------------
                 # Loop keypoints
                 # -------------------------
                 for i in range(N_kps):
-                    src_idx = src_kps_idx[i]  # (x_idx, y_idx) su featuremap
-                    trg_kp = trg_kps[i]  # (x,y) originale
+                    src_kp = src_kps[i]
+                    trg_kp = trg_kps[i]
 
-                    if torch.isnan(src_idx).any() or torch.isnan(trg_kp).any():
+                    if torch.isnan(src_kp).any() or torch.isnan(trg_kp).any():
                         continue
 
-                    x_idx = int(src_idx[0].item())
-                    y_idx = int(src_idx[1].item())
+                    # ---- src pixel (resized) -> src token idx ----
+                    x_idx = int(torch.floor(src_kp[0] / self.PATCH).item())
+                    y_idx = int(torch.floor(src_kp[1] / self.PATCH).item())
 
-                    # Feature vector sorgente (C,)
-                    src_vec = src_emb[:, y_idx, x_idx]  # [C]
+                    # clamp nella regione valida src
+                    x_idx = max(0, min(x_idx, wv_s - 1))
+                    y_idx = max(0, min(y_idx, hv_s - 1))
 
-                    # Cosine similarity su tutte le posizioni target valide
-                    sim = torch.cosine_similarity(trg_flat, src_vec.unsqueeze(0), dim=1)  # [Pvalid]
+                    # vettore feature sorgente: [C]
+                    src_vec = src_valid[:, y_idx, x_idx]
 
-                    # (hv_t, wv_t) similarity map in token space
-                    sim2d = sim.view(hv_t, wv_t)
+                    # cosine similarity su tutti i token target validi
+                    sim = torch.nn.functional.cosine_similarity(trg_flat, src_vec.unsqueeze(0), dim=1)  # [Pvalid]
+                    sim_2d = sim.view(hv_t, wv_t)  # [hv_t, wv_t]
 
-                    # ------------------------------------------------------------
-                    # UPSAMPLE SOLO DELLA SIMILARITY MAP (hard argmax più fine)
-                    # token space (hv,wv) -> resized pixel space (H_prime,W_prime)
-                    # ------------------------------------------------------------
-                    sim_r = torch.nn.functional.interpolate(
-                        sim2d[None, None],  # (1,1,hv,wv)
-                        size=(H_prime, W_prime),  # resized (no pad)
-                        mode="bilinear",
-                        align_corners=False
-                    )[0, 0]  # (H_prime, W_prime)
-
+                    # soft-argmax o argmax classico
                     if self.win_soft_argmax:
-                        # windowed soft-argmax
-                        x_r, y_r = argmax(
-                            sim_r,
-                            window_size=self.wsam_win_size,
-                            beta=self.wsam_beta
-                        )
+                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=self.wsam_win_size,
+                                                                        temperature=self.wsam_beta)
                     else:
-                        # hard argmax
-                        x_r, y_r = argmax(sim_r, window_size=1)
+                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=1)
 
-                    # resized -> originale
-                    x_pred = x_r / scale
-                    y_pred = y_r / scale
+                    # ---- token -> pixel nello spazio resized ----
+                    x_pred = (float(x_pred_patch) + 0.5) * self.PATCH - 0.5
+                    y_pred = (float(y_pred_patch) + 0.5) * self.PATCH - 0.5
 
                     # distanza in pixel originali
                     dx = x_pred - float(trg_kp[0])

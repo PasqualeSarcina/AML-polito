@@ -13,7 +13,7 @@ from data.pfpascal import PFPascalDataset
 from data.pfwillow import PFWillowDataset
 from data.spair import SPairDataset
 from models.dift.SDFeaturizer import SDFeaturizer
-from utils.utils_correspondence import argmax
+from utils.soft_argmax_window import soft_argmax_window
 from utils.utils_featuremaps import save_featuremap, load_featuremap
 from utils.utils_results import CorrespondenceResult
 
@@ -223,14 +223,14 @@ class DiftEval:
 
                     if self.win_soft_argmax:
                         # windowed soft-argmax
-                        x_pre, y_pre = argmax(
+                        x_pre, y_pre = soft_argmax_window(
                             sim_int,
-                            window_size=self.wsam_win_size,
-                            beta=self.wsam_beta
+                            window_radius=self.wsam_win_size,
+                            temperature=self.wsam_beta
                         )
                     else:
                         # hard argmax
-                        x_pre, y_pre = argmax(sim_int, window_size=1)
+                        x_pre, y_pre = soft_argmax_window(sim_int, window_radius=1)
 
                     Ht, Wt = orig_size_trg
                     x_pred = x_pre * (Wt / 768)

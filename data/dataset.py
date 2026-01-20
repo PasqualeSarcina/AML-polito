@@ -13,10 +13,11 @@ import numpy as np
 
 
 def get_pckthres(bb_annotation, alpha: float):
-    r""" Computes PCK threshold """
-    tx1, ty1, tx2, ty2 = bb_annotation
-    threshold = float(max(tx2 - tx1, ty2 - ty1) * alpha)
-    return threshold
+    if torch.is_tensor(bb_annotation):
+        tx1, ty1, tx2, ty2 = bb_annotation.tolist()
+    else:
+        tx1, ty1, tx2, ty2 = bb_annotation
+    return float(max(tx2 - tx1, ty2 - ty1) * alpha)
 
 
 class CorrespondenceDataset(Dataset):
