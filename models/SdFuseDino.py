@@ -39,10 +39,12 @@ class SdFuseDino:
         self.sd_preproc = DiftPreProcess(out_dim=(self.featmap_size[0] * self.sd_stride, self.featmap_size[1] * self.sd_stride))
         self.dino_preproc = Dinov2PreProcess(out_dim=(self.featmap_size[0] * self.sd_stride, self.featmap_size[1] * self.sd_stride))
 
+        self._init_dataset()
+
     def _init_dataset(self):
         match self.dataset_name:
             case 'spair-71k':
-                self.dataset = SPairDataset(datatype='test',dataset_size='large')
+                self.dataset = SPairDataset(datatype='test',dataset_size='small')
             case 'pf-pascal':
                 self.dataset = PFPascalDataset(datatype='test')
             case 'pf-willow':
