@@ -11,6 +11,7 @@ from data.pfwillow import PFWillowDataset
 from data.spair import SPairDataset
 from models.dinov2.PreProcess import PreProcess
 from utils.soft_argmax_window import soft_argmax_window
+from utils.utils_convert import pixel_to_patch_idx, patch_idx_to_pixel
 from utils.utils_featuremaps import save_featuremap, load_featuremap
 from utils.utils_results import CorrespondenceResult
 
@@ -119,16 +120,12 @@ class Dinov2Eval:
                         continue
 
                     # --- SRC kp (in 518) -> patch index ---
-                    x_kp_src = float(kp_src[0].item())
-                    y_kp_src = float(kp_src[1].item())
-
-                    x_kp_src = max(0.0, min(out_w - 1.0, x_kp_src))
-                    y_kp_src = max(0.0, min(out_h - 1.0, y_kp_src))
-
-                    x_patch = int(x_kp_src // patch_size)
-                    y_patch = int(y_kp_src // patch_size)
-                    x_patch = min(max(0, x_patch), w_grid - 1)
-                    y_patch = min(max(0, y_patch), h_grid - 1)
+                    y_patch, x_patch = pixel_to_patch_idx(
+                        kp_src,
+                        stride=patch_size,
+                        grid_hw=(h_grid, w_grid),
+                        img_hw=(out_h, out_w),
+                    )
 
                     patch_index_src = y_patch * w_grid + x_patch
 
@@ -147,8 +144,7 @@ class Dinov2Eval:
                         y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=1)
 
                     # --- 518 -> ORIG target  ---
-                    x_pred = (x_pred_patch + 0.5) * patch_size - 0.5
-                    y_pred = (y_pred_patch + 0.5) * patch_size - 0.5
+                    x_pred, y_pred = patch_idx_to_pixel((x_pred_patch, y_pred_patch), stride=patch_size)
 
                     gt_x = float(kp_trg[0].item())
                     gt_y = float(kp_trg[1].item())

@@ -15,6 +15,7 @@ from data.spair import SPairDataset
 from models.dift.PreProcess import PreProcess
 from models.dift.SDFeaturizer import SDFeaturizer
 from utils.soft_argmax_window import soft_argmax_window
+from utils.utils_convert import pixel_to_patch_idx, patch_idx_to_pixel
 from utils.utils_featuremaps import save_featuremap, load_featuremap
 from utils.utils_results import CorrespondenceResult
 
@@ -114,10 +115,12 @@ class DiftEval:
                         continue
 
                     # ---- SRC pixel(768) -> token idx (48x48) ----
-                    x_idx = int(torch.floor(kp_src[0] / PATCH).item())
-                    y_idx = int(torch.floor(kp_src[1] / PATCH).item())
-                    x_idx = max(0, min(x_idx, WV - 1))
-                    y_idx = max(0, min(y_idx, HV - 1))
+                    x_idx, y_idx = pixel_to_patch_idx(
+                        kp_src,
+                        stride=PATCH,
+                        grid_hw=(HV, WV),
+                        img_hw=(OUT_H, OUT_W)
+                    )
 
                     # ---- src feature vector ----
                     src_vec = src_ft[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
@@ -137,8 +140,7 @@ class DiftEval:
                         y_tok, x_tok = soft_argmax_window(sim2d, window_radius=1)
 
                     # ---- token -> pixel nello spazio 768 (centro patch) ----
-                    x_pred = (x_tok + 0.5) * PATCH - 0.5
-                    y_pred = (y_tok + 0.5) * PATCH - 0.5
+                    x_pred, y_pred = patch_idx_to_pixel((x_tok, y_tok), stride=PATCH)
 
                     dx = x_pred - float(kp_trg[0].item())
                     dy = y_pred - float(kp_trg[1].item())

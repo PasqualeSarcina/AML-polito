@@ -14,6 +14,7 @@ from data.pfwillow import PFWillowDataset
 from data.spair import SPairDataset
 from models.sam.PreProcess import PreProcess
 from utils.soft_argmax_window import soft_argmax_window
+from utils.utils_convert import pixel_to_patch_idx, patch_idx_to_pixel
 from utils.utils_download import download
 from utils.utils_featuremaps import save_featuremap, load_featuremap
 from utils.utils_results import CorrespondenceResult
@@ -52,8 +53,6 @@ class SamEval:
         sam.eval()
         self.predictor = SamPredictor(sam)
         self.transform = self.predictor.transform
-        self.IMG_SIZE = self.predictor.model.image_encoder.img_size  # 1024
-        self.PATCH = int(self.predictor.model.image_encoder.patch_embed.proj.kernel_size[0])
 
     def _init_dataset(self):
         transform = PreProcess(sam_transform=self.transform)
@@ -91,7 +90,8 @@ class SamEval:
 
     def evaluate(self) -> list[CorrespondenceResult]:
         results = []
-
+        IMG_SIZE = self.predictor.model.image_encoder.img_size  # 1024
+        PATCH = int(self.predictor.model.image_encoder.patch_embed.proj.kernel_size[0])
         torch.cuda.empty_cache()
         with torch.no_grad():
             for batch in tqdm(
@@ -120,14 +120,14 @@ class SamEval:
                 Ht_prime, Wt_prime = batch["trg_resized_size"]
 
                 # Regione valida in token-space (NO padding), con PATCH tipico SAM = 16
-                hv_s = (Hs_prime + self.PATCH - 1) // self.PATCH
-                wv_s = (Ws_prime + self.PATCH - 1) // self.PATCH
+                hv_s = (Hs_prime + PATCH - 1) // PATCH
+                wv_s = (Ws_prime + PATCH - 1) // PATCH
 
-                hv_t = (Ht_prime + self.PATCH - 1) // self.PATCH
-                wv_t = (Wt_prime + self.PATCH - 1) // self.PATCH
+                hv_t = (Ht_prime + PATCH - 1) // PATCH
+                wv_t = (Wt_prime + PATCH - 1) // PATCH
 
                 # (opzionale) clamp su griglia encoder (di solito 1024/16 = 64)
-                grid = self.IMG_SIZE // self.PATCH  # es. 1024//16 = 64
+                grid = IMG_SIZE // PATCH  # es. 1024//16 = 64
                 hv_s = min(hv_s, grid)
                 wv_s = min(wv_s, grid)
                 hv_t = min(hv_t, grid)
@@ -155,12 +155,12 @@ class SamEval:
                         continue
 
                     # ---- src pixel (resized) -> src token idx ----
-                    x_idx = int(torch.floor(src_kp[0] / self.PATCH).item())
-                    y_idx = int(torch.floor(src_kp[1] / self.PATCH).item())
-
-                    # clamp nella regione valida src
-                    x_idx = max(0, min(x_idx, wv_s - 1))
-                    y_idx = max(0, min(y_idx, hv_s - 1))
+                    x_idx, y_idx = pixel_to_patch_idx(
+                        src_kp,
+                        stride=PATCH,
+                        grid_hw=(hv_s, wv_s),
+                        img_hw=(Hs_prime, Ws_prime),
+                    )
 
                     # vettore feature sorgente: [C]
                     src_vec = src_valid[:, y_idx, x_idx]
@@ -177,8 +177,7 @@ class SamEval:
                         y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=1)
 
                     # ---- token -> pixel nello spazio resized ----
-                    x_pred = (float(x_pred_patch) + 0.5) * self.PATCH - 0.5
-                    y_pred = (float(y_pred_patch) + 0.5) * self.PATCH - 0.5
+                    x_pred, y_pred = patch_idx_to_pixel((x_pred_patch, y_pred_patch), stride=PATCH)
 
                     # distanza in pixel originali
                     dx = x_pred - float(trg_kp[0])
