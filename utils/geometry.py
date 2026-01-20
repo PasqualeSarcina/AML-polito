@@ -67,10 +67,10 @@ def window_softmax(pred_y, pred_x, similarity_map_up, device, H_img, W_img, temp
     cx = pred_x.item() if isinstance(pred_x, torch.Tensor) else pred_x
     
     # Clamp per non uscire dai bordi dell'immagine
-    top = torch.clamp(cy - radius, min=0)
-    bottom = torch.clamp(cy + radius + 1, max=H_img)
-    left = torch.clamp(cx - radius, min=0)
-    right = torch.clamp(cx + radius + 1, max=W_img)
+    top = max(cy - radius, 0)
+    bottom = min(cy + radius + 1, H_img)
+    left = max(cx - radius, 0)
+    right = min(cx + radius + 1, W_img)
 
     # Estrarre FINESTRA LOCALE dalla heatmap --> prendiamo [0, 0, y, x]
     # 15x15
