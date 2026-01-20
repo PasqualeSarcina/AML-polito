@@ -124,6 +124,8 @@ class SdFuseDino:
                     kp_src = src_kps[i]  # (x,y) in 768
                     kp_trg = trg_kps[i]  # (x,y) in 768
 
+                    print("input kp src:", kp_src)
+
                     if torch.isnan(kp_src).any() or torch.isnan(kp_trg).any():
                         continue
 
@@ -131,7 +133,7 @@ class SdFuseDino:
                                                       img_hw=(self.featmap_size[0] * self.sd_stride,
                                                               self.featmap_size[1] * self.sd_stride))
 
-                    print(x_idx, y_idx)
+                    print("before",x_idx, y_idx)
                     # ---- SRC pixel(768) -> token idx (48x48) ----
                     x_idx, y_idx = self.pixel_to_patch_idx_norm(
                         kp_src,
@@ -139,7 +141,7 @@ class SdFuseDino:
                         img_hw=(768, 768)  # spazio in cui vive kp_src
                     )
 
-                    print(x_idx, y_idx)
+                    print("after",x_idx, y_idx)
 
                     # ---- src feature vector ----
                     src_vec = fuse_src[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
