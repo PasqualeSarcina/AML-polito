@@ -68,15 +68,18 @@ class CorrespondenceDataset(Dataset):
         sample['src_kps'] = torch.tensor(annotation['src_kps'], dtype=torch.float32)
         sample['trg_kps'] = torch.tensor(annotation['trg_kps'], dtype=torch.float32)
 
+        # Apply transform (e.g., SAM preprocessing)
         if self.transform:
             sample = self.transform(sample)
 
-        sample['src_imsize'] = src_img.size()
-        sample['trg_imsize'] = trg_img.size()
+        # Compute and store image sizes
+        sample['src_imsize'] = sample['src_img'].size()
+        sample['trg_imsize'] = sample['trg_img'].size()
 
-        sample['pck_threshold_0_05'] = get_pckthres(annotation['trg_bndbox'], 0.05)
-        sample['pck_threshold_0_1'] = get_pckthres(annotation['trg_bndbox'], 0.1)
-        sample['pck_threshold_0_2'] = get_pckthres(annotation['trg_bndbox'], 0.2)
+        # Compute PCK thresholds
+        sample['pck_threshold_0_05'] = get_pckthres(sample['trg_bndbox'], 0.05)
+        sample['pck_threshold_0_1'] = get_pckthres(sample['trg_bndbox'], 0.1)
+        sample['pck_threshold_0_2'] = get_pckthres(sample['trg_bndbox'], 0.2)
 
         return sample
 

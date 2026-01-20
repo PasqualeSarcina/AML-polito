@@ -11,7 +11,6 @@ from data.pfwillow import PFWillowDataset
 from data.spair import SPairDataset
 from models.dinov2.PreProcess import PreProcess
 from utils.soft_argmax_window import soft_argmax_window
-from utils.utils_correspondence import argmax
 from utils.utils_featuremaps import save_featuremap, load_featuremap
 from utils.utils_results import CorrespondenceResult
 
@@ -93,8 +92,8 @@ class Dinov2Eval:
                 category = batch["category"]
 
                 # featuremaps salvate su immagini resized 518x518
-                feats_src = self._compute_features(batch["src_img"], batch["src_imname"], category)
-                feats_trg = self._compute_features(batch["trg_img"], batch["trg_imname"], category)
+                feats_src = self._compute_features(batch["src_img"], batch["src_imname"], category) # Resized image
+                feats_trg = self._compute_features(batch["trg_img"], batch["trg_imname"], category) # Resized image
 
                 feats_src = feats_src.to(self.device)
                 feats_trg = feats_trg.to(self.device)
@@ -145,7 +144,7 @@ class Dinov2Eval:
                     if self.win_soft_argmax:
                         y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=self.wsam_win_size, temperature=self.wsam_beta)  # ritorna x,y
                     else:
-                        y_pred_patch, x_pred_patch = argmax(sim_2d, window_size=1)
+                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=1)
 
                     # --- 518 -> ORIG target  ---
                     x_pred = (x_pred_patch + 0.5) * patch_size - 0.5
@@ -163,9 +162,9 @@ class Dinov2Eval:
                     CorrespondenceResult(
                         category=category,
                         distances=distances_this_image,
-                        pck_threshold_0_05=batch["pck_threshold_0_05"],
-                        pck_threshold_0_1=batch["pck_threshold_0_1"],
-                        pck_threshold_0_2=batch["pck_threshold_0_2"],
+                        pck_threshold_0_05=batch["pck_threshold_0_05"], # Resized PCK thresholds
+                        pck_threshold_0_1=batch["pck_threshold_0_1"], # Resized PCK thresholds
+                        pck_threshold_0_2=batch["pck_threshold_0_2"], # Resized PCK thresholds
                     )
                 )
 

@@ -18,7 +18,7 @@ def soft_argmax_window(sim_map_2d, window_radius=3, temperature=20):
     y_hard = idx // W
     x_hard = idx % W
 
-    if window_radius ==1:
+    if window_radius == 1:
         return y_hard.float(), x_hard.float()
 
     # 2. Define the Window around the peak
