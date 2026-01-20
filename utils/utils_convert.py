@@ -3,10 +3,10 @@ from typing import Tuple, Optional
 import torch
 
 def pixel_to_patch_idx(
-    xy: torch.Tensor | Tuple[float, float],
+    xy: torch.Tensor,
     stride: int,
     grid_hw: Tuple[int, int],
-    img_hw: Optional[Tuple[int, int]] = None,
+    img_hw: Tuple[int, int]
 ) -> Tuple[int, int]:
     """
     (x,y) pixel -> (x_idx,y_idx) patch.
@@ -15,23 +15,19 @@ def pixel_to_patch_idx(
         xy: (x,y) in pixel nello spazio resized.
         stride: patch/stride effettivo (16 per DIFT/SAM, 14 per DINO).
         grid_hw: (H_grid, W_grid) numero di patch validi.
-        img_hw: (H_img, W_img) opzionale per clamp pixel.
+        img_hw: (H_img, W_img) image size (same as model input and ti which poit have been scaled).
 
     Returns:
         xy_idx, y_idx) clampati in griglia valida.
     """
     # leggi (x,y)
-    if torch.is_tensor(xy):
-        x = float(xy[0].item())
-        y = float(xy[1].item())
-    else:
-        x, y = float(xy[0]), float(xy[1])
+    x = float(xy[0].item())
+    y = float(xy[1].item())
 
     # clamp pixel
-    if img_hw is not None:
-        H_img, W_img = int(img_hw[0]), int(img_hw[1])
-        x = max(0.0, min(W_img - 1.0, x))
-        y = max(0.0, min(H_img - 1.0, y))
+    H_img, W_img = int(img_hw[0]), int(img_hw[1])
+    x = max(0.0, min(W_img - 1.0, x))
+    y = max(0.0, min(H_img - 1.0, y))
 
     # pixel -> patch
     x_idx = int(x // stride)

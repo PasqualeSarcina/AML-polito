@@ -120,7 +120,7 @@ class Dinov2Eval:
                         continue
 
                     # --- SRC kp (in 518) -> patch index ---
-                    y_patch, x_patch = pixel_to_patch_idx(
+                    x_patch, y_patch = pixel_to_patch_idx(
                         kp_src,
                         stride=patch_size,
                         grid_hw=(h_grid, w_grid),
