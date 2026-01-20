@@ -97,8 +97,6 @@ class DiftEval:
 
                 if src_ft.ndim == 3:  # [C,48,48] -> [1,C,48,48]
                     src_ft = src_ft.unsqueeze(0)
-                if trg_ft.ndim == 3:
-                    trg_ft = trg_ft.unsqueeze(0)
 
                 # keypoints già nello spazio 768×768
                 src_kps = batch["src_kps"].to(self.device)  # (N,2) in 768
