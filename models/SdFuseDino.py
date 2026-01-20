@@ -98,8 +98,11 @@ class SdFuseDino:
 
                 alpha = 0.5
 
-                fuse_src = torch.cat([alpha * sd_src_featmap, (1 - alpha) * dino_src_featmap], dim=1)
-                fuse_trg = torch.cat([alpha * sd_trg_featmap, (1 - alpha) * dino_trg_featmap], dim=1)
+                w_sd = (alpha ** 0.5)
+                w_dino = ((1 - alpha) ** 0.5)
+
+                fuse_src = torch.cat([w_sd * sd_src_featmap, w_dino * dino_src_featmap], dim=1)
+                fuse_trg = torch.cat([w_sd * sd_trg_featmap, w_dino * dino_trg_featmap], dim=1)
 
                 batch = self.sd_preproc(batch)
 
