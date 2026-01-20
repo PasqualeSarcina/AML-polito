@@ -213,7 +213,7 @@ class SdFuseDino:
                     kp_src = src_kps[i]
                     kp_trg = trg_kps[i]
 
-                    if torch.isnan(kp_src).any():
+                    if (kp_src[0] < 0) or (kp_src[1] < 0) or (kp_trg[0] < 0) or (kp_trg[1] < 0):
                         continue
 
                     # pixel (es 768) -> patch idx (48x48)
@@ -234,13 +234,8 @@ class SdFuseDino:
                     #   - dot product se i token sono L2-normalizzati
                     # oppure
                     #   - negative squared L2 (più “l2-like”)
-                    if ("l1" in DIST) or ("l2" in DIST) or (DIST == "plus_norm"):
-                        # token già normalizzati -> dot ~ cosine, ranking ~ l2
-                        sim_1d = (trg_all * src_vec.unsqueeze(0)).sum(dim=-1)  # [P]
-                    else:
-                        # negative squared L2 (se vuoi proprio l2 “puro”)
-                        diff = trg_all - src_vec.unsqueeze(0)
-                        sim_1d = -(diff * diff).sum(dim=-1)  # [P]
+                    diff = trg_all - src_vec.unsqueeze(0)  # [P, D]
+                    sim_1d = -(diff * diff).sum(dim=-1)  # [P]  = -||x-y||^2
 
                     sim2d = sim_1d.view(H, W)  # <-- QUESTA è la similarity map 2D (48x48)
 
