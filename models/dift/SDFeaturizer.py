@@ -91,12 +91,20 @@ class SDFeaturizer:
         if img_tensor is not None:
             img_tensor = img_tensor.cuda()  # ensem, c, h, w
 
+        if up_ft_index is not list:
+            up_ft_index = [up_ft_index]
         prompt_embed = prompt_embed.repeat(ensemble_size, 1, 1).to(self.device)
         unet_ft_all = self.pipe(
             img_tensor=img_tensor,
             t=t,
-            up_ft_indices=[up_ft_index],
+            up_ft_indices=up_ft_index,
             prompt_embeds=prompt_embed)
-        unet_ft = unet_ft_all['up_ft'][up_ft_index]  # ensem, c, h, w
-        unet_ft = unet_ft.mean(0, keepdim=True)  # 1,c,h,w
-        return unet_ft
+        fts = {}
+        for idx in up_ft_index:
+            ft = unet_ft_all['up_ft'][int(idx)]  # [ensem, C, H, W]
+            ft = ft.mean(0, keepdim=True)  # [1, C, H, W]
+            fts[idx] = ft
+        if len(up_ft_index) == 1:
+            return  fts[up_ft_index[0]]
+        else:
+            return fts
