@@ -201,6 +201,8 @@ class SdFuseDino:
                 # -------------------------------------------------------------------
                 # 6) ORA: per ogni keypoint SRC calcoli la SIMILARITY MAP 2D (stop qui)
                 # -------------------------------------------------------------------
+                batch = self.sd_preproc(batch)
+
                 src_kps = batch["src_kps"].to(self.device)  # (N,2) nello spazio SD preprocess (es. 768)
                 trg_kps = batch["trg_kps"].to(self.device)  # (N,2) nello spazio SD preprocess (es. 768)
                 # oppure se li hai già scalati nel dataset a 768, ok.
