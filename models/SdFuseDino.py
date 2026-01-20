@@ -37,7 +37,7 @@ class SdFuseDino:
         self.sd_stride = 16  # DIFT patch stride
 
         self.sd_preproc = DiftPreProcess(out_dim=(self.featmap_size[0] * self.sd_stride, self.featmap_size[1] * self.sd_stride))
-        self.dino_preproc = Dinov2PreProcess(out_dim=(self.featmap_size[0] * self.sd_stride, self.featmap_size[1] * self.sd_stride))
+        self.dino_preproc = Dinov2PreProcess(out_dim=(self.featmap_size[0] * self.dino_stride, self.featmap_size[1] * self.dino_stride))
 
         self._init_dataset()
 
