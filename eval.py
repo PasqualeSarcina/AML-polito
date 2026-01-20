@@ -68,7 +68,11 @@ def main():
             model = sam.SamEval(args)
 
         case 'dift':
-            model = dift.DiftEval(args)
+            if hasattr(args, 'fuse_dino') and args.fuse_dino:
+                from models.SdFuseDino import SdFuseDino
+                model = SdFuseDino(args)
+            else:
+                model = dift.DiftEval(args)
 
         case _:
             raise ValueError(f"Unknown model: {args.model}")
