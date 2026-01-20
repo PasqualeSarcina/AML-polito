@@ -136,7 +136,14 @@ class SdFuseDino:
                 # 2) co-PCA SD (repo): co_pca(features1, features2, PCA_DIMS)
                 #    -> ritorna due tensori [1, Csum, H?, W?]
                 # -------------------------------------------------------------------
-                sd_src_proc, sd_trg_proc = co_pca(sd_src_dict, sd_trg_dict, PCA_DIMS)
+                sd_src_proc, sd_trg_proc = co_pca(
+                    sd_src_dict,
+                    sd_trg_dict,
+                    pca_dims=PCA_DIMS,
+                    out_hw=self.featmap_size,  # es. (48, 48)
+                    keys=("s5", "s4", "s3"),
+                    center=True
+                )
 
                 # repo: rescale features to (num_patches, num_patches)
                 if sd_src_proc.shape[-2:] != (H, W):
