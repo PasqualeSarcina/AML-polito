@@ -100,10 +100,10 @@ class SdFuseDino:
                               desc=f"DIFT + DINOv2 Eval on {self.dataset_name}"):
                 sd_src_featmap, sd_trg_featmap, dino_src_featmap, dino_trg_featmap = self._compute_features(batch)
 
-                sd_src_featmap = F.normalize(sd_src_featmap, p=2, dim=1)
-                sd_trg_featmap = F.normalize(sd_trg_featmap, p=2, dim=1)
-                dino_src_featmap = F.normalize(dino_src_featmap, p=2, dim=1)
-                dino_trg_featmap = F.normalize(dino_trg_featmap, p=2, dim=1)
+                #sd_src_featmap = F.normalize(sd_src_featmap, p=2, dim=1)
+                #sd_trg_featmap = F.normalize(sd_trg_featmap, p=2, dim=1)
+                #dino_src_featmap = F.normalize(dino_src_featmap, p=2, dim=1)
+                #dino_trg_featmap = F.normalize(dino_trg_featmap, p=2, dim=1)
 
                 alpha = 0.5
 
