@@ -12,6 +12,7 @@ from data.ap10k import AP10KDataset
 from data.pfpascal import PFPascalDataset
 from data.pfwillow import PFWillowDataset
 from data.spair import SPairDataset
+from models.dift.PreProcess import PreProcess
 from models.dift.SDFeaturizer import SDFeaturizer
 from utils.soft_argmax_window import soft_argmax_window
 from utils.utils_featuremaps import save_featuremap, load_featuremap
@@ -39,15 +40,16 @@ class DiftEval:
         self.prompt_embeds = self.featurizer.encode_category_prompts(categories)
 
     def _init_dataset(self):
+        transforms = PreProcess(ensemble_size=self.enseble_size)
         match self.dataset_name:
             case 'spair-71k':
-                self.dataset = SPairDataset(datatype='test', transform=None, dataset_size='large')
+                self.dataset = SPairDataset(datatype='test', transform=transforms, dataset_size='large')
             case 'pf-pascal':
-                self.dataset = PFPascalDataset(datatype='test', transform=None)
+                self.dataset = PFPascalDataset(datatype='test', transform=transforms)
             case 'pf-willow':
-                self.dataset = PFWillowDataset(datatype='test', transform=None)
+                self.dataset = PFWillowDataset(datatype='test', transform=transforms)
             case 'ap-10k':
-                self.dataset = AP10KDataset(datatype='test', transform=None)
+                self.dataset = AP10KDataset(datatype='test', transform=transforms)
 
         def collate_single(batch_list):
             return batch_list[0]

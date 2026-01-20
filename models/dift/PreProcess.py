@@ -4,7 +4,7 @@ from torchvision import transforms
 
 
 class PreProcess(object):
-    def __init__(self, out_dim=(768, 768), ensemble_size=8):
+    def __init__(self, out_dim=(768, 768), ensemble_size=4):
         self.out_dim = out_dim  # (H, W)
         self.ensemble_size = ensemble_size
 
