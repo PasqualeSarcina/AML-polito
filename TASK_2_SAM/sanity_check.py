@@ -3,10 +3,12 @@ import os
 import sys
 from torch.utils.data import DataLoader
 import numpy as np
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data.dataset import SPairDataset
 from segment_anything import sam_model_registry
 from utils.common import download_sam_model
-from TASK2.setup import DenseCrossEntropy
+from setup import DenseCrossEntropy
 
 def check_initial_loss():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

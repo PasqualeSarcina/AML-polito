@@ -1,6 +1,10 @@
+import os
+import sys
 import torch
 import torch.nn.functional as F
-from utils.geometry import window_softmax
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from TASK_3.window_softmax import window_softmax
 
 def extract_features(model, img_tensor, model_type='sam'):
     """
@@ -56,7 +60,7 @@ def compute_correspondence(src_feats, trg_feats, src_kps, img_size, softmax_flag
 
         if softmax_flag:
             pred_x, pred_y = window_softmax(pred_y, pred_x, similarity_map_up, device,
-                                            H_img, W_img, temperature, window_size)
+                                            H_img, W_img)
 
         predictions.append([pred_x.item(), pred_y.item()])
 

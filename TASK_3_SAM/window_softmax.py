@@ -2,7 +2,8 @@ import torch
 import torch.nn.functional as F 
 
 def window_softmax(pred_y, pred_x, similarity_map_up, device, H_img, W_img):
-    temperature=20, window_size=15
+    temperature=20,
+    window_size=15
     radius = window_size // 2
     # Conversione a int per sicurezza nello slicing
     cy = pred_y.item() if isinstance(pred_y, torch.Tensor) else pred_y
