@@ -1,19 +1,14 @@
 import os
+import sys
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch.cuda.amp import autocast, GradScaler
-from tqdm import tqdm
 from segment_anything import sam_model_registry
-import random
-import numpy as np
-import json
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from TASK_2_SAM.setup import DenseCrossEntropyLoss, configure_model
-from utils.geometry import extract_features
-from utils.common import download_sam_model, plot_training_results
+from utils.common import download_sam_model
 from data.dataset import SPairDataset
 
 def check_overfitting():
