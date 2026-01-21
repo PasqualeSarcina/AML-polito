@@ -1,5 +1,6 @@
 import math
 from copy import deepcopy
+from itertools import islice
 from typing import List
 
 import torch
@@ -87,8 +88,10 @@ class SdFuseDino:
     def evaluate(self) -> List[CorrespondenceResult]:
         results = []
 
+        a = islice(self.dataloader, 100)
+
         with torch.no_grad():
-            for batch in tqdm(self.dataloader, total=len(self.dataloader),
+            for batch in tqdm(a, total=100,
                               desc=f"DIFT + DINOv2 Eval on {self.dataset_name}"):
                 sd_src_featmap, sd_trg_featmap, dino_src_featmap, dino_trg_featmap = self._compute_features(batch)
 
@@ -99,11 +102,8 @@ class SdFuseDino:
 
                 alpha = 0.5
 
-                w_sd = (alpha ** 0.5)
-                w_dino = ((1 - alpha) ** 0.5)
-
-                fuse_src = torch.cat([w_sd * sd_src_featmap, w_dino * dino_src_featmap], dim=1)
-                fuse_trg = torch.cat([w_sd * sd_trg_featmap, w_dino * dino_trg_featmap], dim=1)
+                fuse_src = torch.cat([alpha * sd_src_featmap, alpha * dino_src_featmap], dim=1)
+                fuse_trg = torch.cat([alpha * sd_trg_featmap, alpha * dino_trg_featmap], dim=1)
 
                 batch = self.sd_preproc(batch)
 
