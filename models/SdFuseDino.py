@@ -8,6 +8,7 @@ from tqdm import tqdm
 import torch.nn.functional as F
 
 from data.ap10k import AP10KDataset
+from data.dataset import get_pckthres
 from data.pfpascal import PFPascalDataset
 from data.pfwillow import PFWillowDataset
 from data.spair import SPairDataset
@@ -158,9 +159,9 @@ class SdFuseDino:
                     CorrespondenceResult(
                         category=batch["category"],
                         distances=distances_this_image,
-                        pck_threshold_0_05=batch["pck_threshold_0_05"],
-                        pck_threshold_0_1=batch["pck_threshold_0_1"],
-                        pck_threshold_0_2=batch["pck_threshold_0_2"]
+                        pck_threshold_0_05=get_pckthres(batch["pck_threshold_0_05"], 0.05),  # Resized PCK thresholds
+                        pck_threshold_0_1=get_pckthres(batch["pck_threshold_0_1"], 0.1),    # Resized PCK thresholds
+                        pck_threshold_0_2=get_pckthres(batch["pck_threshold_0_2"], 0.2)     # Resized PCK thresholds
                     )
                 )
 
