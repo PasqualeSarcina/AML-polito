@@ -159,9 +159,9 @@ class SdFuseDino:
                     CorrespondenceResult(
                         category=batch["category"],
                         distances=distances_this_image,
-                        pck_threshold_0_05=get_pckthres(batch["pck_threshold_0_05"], 0.05),  # Resized PCK thresholds
-                        pck_threshold_0_1=get_pckthres(batch["pck_threshold_0_1"], 0.1),    # Resized PCK thresholds
-                        pck_threshold_0_2=get_pckthres(batch["pck_threshold_0_2"], 0.2)     # Resized PCK thresholds
+                        pck_threshold_0_05=get_pckthres(batch["trg_bndbox"], 0.05),  # Resized PCK thresholds
+                        pck_threshold_0_1=get_pckthres(batch["trg_bndbox"], 0.1),    # Resized PCK thresholds
+                        pck_threshold_0_2=get_pckthres(batch["trg_bndbox"], 0.2)     # Resized PCK thresholds
                     )
                 )
 
