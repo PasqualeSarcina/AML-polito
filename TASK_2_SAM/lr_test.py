@@ -6,6 +6,8 @@ from torch.utils.data import DataLoader
 from segment_anything import sam_model_registry
 import matplotlib.pyplot as plt
 import copy
+import random
+import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
