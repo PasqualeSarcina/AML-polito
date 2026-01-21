@@ -9,6 +9,7 @@ from tqdm import tqdm
 import torch.nn.functional as F
 
 from data.ap10k import AP10KDataset
+from data.dataset import get_pckthres
 from data.pfpascal import PFPascalDataset
 from data.pfwillow import PFWillowDataset
 from data.spair import SPairDataset
@@ -217,7 +218,7 @@ class SdFuseDino:
                         continue
 
                     # pixel (es 768) -> patch idx (48x48)
-                    y_idx, x_idx = pixel_to_patch_idx(
+                    x_idx, y_idx = pixel_to_patch_idx(
                         kp_src,
                         stride=self.sd_stride,  # es 16
                         grid_hw=(H, W),
@@ -262,9 +263,9 @@ class SdFuseDino:
                     CorrespondenceResult(
                         category=batch["category"],
                         distances=distances_this_image,
-                        pck_threshold_0_05=batch["pck_threshold_0_05"],
-                        pck_threshold_0_1=batch["pck_threshold_0_1"],
-                        pck_threshold_0_2=batch["pck_threshold_0_2"]
+                        pck_threshold_0_05=get_pckthres(batch["trg_bndbox"], 0.05),
+                        pck_threshold_0_1=get_pckthres(batch["trg_bndbox"], 0.1),
+                        pck_threshold_0_2=get_pckthres(batch["trg_bndbox"], 0.2)
                     )
                 )
 
