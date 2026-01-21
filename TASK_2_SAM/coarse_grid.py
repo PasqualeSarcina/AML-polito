@@ -28,6 +28,7 @@ def seed_everything(seed=42):
     print(f">>> 🔒 SEED FISSATO A {seed} <<<")
 
 def coarse_grid(dataloader, lr, wd, device, checkpoint_dir):
+    seed_everything(42)
     ckpt_path = download_sam_model(checkpoint_dir)
     model = sam_model_registry["vit_b"](checkpoint=ckpt_path)
     model.to(device)
@@ -40,7 +41,7 @@ def coarse_grid(dataloader, lr, wd, device, checkpoint_dir):
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
                                 lr=lr, weight_decay=wd)
     
-    scaler = GradScaler('cuda')
+    scaler = GradScaler()
     epochs = 3
     limit_batches = 1000
     epoch_losses = []
@@ -64,9 +65,9 @@ def coarse_grid(dataloader, lr, wd, device, checkpoint_dir):
             kps_trg = batch['trg_kps'].to(device)
             kps_mask = batch['kps_valid'].to(device)
             
-            with autocast('cuda'):
-                src_feat = model.get_image_features(src)
-                trg_feat = model.get_image_features(trg)
+            with autocast():
+                src_feat = model.image_encoder(src)
+                trg_feat = model.image_encoder(trg)
                 loss = criterion(src_feat, trg_feat, kps_src, kps_trg, kps_mask)
 
             scaler.scale(loss).backward()
@@ -113,7 +114,6 @@ def plot_grid_results(results):
     plt.close()
 
 if __name__ == "__main__":
-    seed_everything(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset_root = 'dataset/SPair-71k'
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     dataset = SPairDataset(pair_ann_path, layout_path, image_path, dataset_size='small', pck_alpha=0.1, datatype='trn')
     print(f"Dimensione dataset Small: {len(dataset)} coppie.")
 
-    dataloader = DataLoader(dataset, batch_size=8, shuffle=True,
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=True,
                              num_workers=4, persistent_workers =True, pin_memory=True)
    
     lr_wd_combinations = [(1e-3, 1e-3),
