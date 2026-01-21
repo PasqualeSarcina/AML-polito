@@ -58,7 +58,7 @@ class DiftEval:
         self.dataloader = DataLoader(self.dataset, num_workers=4, batch_size=1, collate_fn=collate_single)
 
     def compute_features(self, img_tensor: torch.Tensor, img_name: str,
-                          category: str, up_ft_index: list[int] | int = 1) -> torch.Tensor:
+                          category: str, up_ft_index: list[int] | int = 1, t:int = 261) -> torch.Tensor:
         if self.dataset_name == "ap-10k":
             category_opt = "all"
         else:
@@ -73,7 +73,8 @@ class DiftEval:
             img_tensor=img_tensor,
             prompt_embed=prompt_embed,
             ensemble_size=self.enseble_size,
-            up_ft_index=up_ft_index
+            up_ft_index=up_ft_index,
+            t=t
         )  # (1,c,h,w)
         save_featuremap(unet_ft, img_name, self.feat_dir)
         self.processed_img[category_opt].add(img_name)
