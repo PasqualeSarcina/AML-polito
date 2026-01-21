@@ -95,8 +95,9 @@ class SdFuseDino:
         results = []
         up_ft_index = [0, 1, 2]
 
+        a = islice(self.dataloader, 100)
         with torch.no_grad():
-            for batch in tqdm(self.dataloader, total=len(self.dataloader),
+            for batch in tqdm(a, total=100,
                               desc=f"DIFT + DINOv2 Eval on {self.dataset_name}"):
                 sd_src_featmap, sd_trg_featmap, dino_src_featmap, dino_trg_featmap = self._compute_features(batch)
 
