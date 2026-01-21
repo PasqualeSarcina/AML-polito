@@ -3,14 +3,27 @@ import os
 import sys
 from torch.utils.data import DataLoader
 import numpy as np
+import random
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data.dataset import SPairDataset
 from segment_anything import sam_model_registry
 from utils.common import download_sam_model
-from setup import DenseCrossEntropy
+from TASK_2_SAM.setup import DenseCrossEntropyLoss
+
+def seed_everything(seed=42):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False 
+    print(f">>> 🔒 SEED FISSATO A {seed} <<<")
 
 def check_initial_loss():
+    seed_everything(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"--- Running Initial Loss Check using loss.py on {device} ---")
     
@@ -32,7 +45,7 @@ def check_initial_loss():
     model.eval()
 
     # 3. Initialize YOUR Loss Function
-    criterion = DenseCrossEntropy(temperature=1.0).to(device)
+    criterion = DenseCrossEntropyLoss(temperature=1.0).to(device)
 
     # 4. Prepare Batch
     src = batch['src_img'].to(device)
@@ -48,6 +61,7 @@ def check_initial_loss():
     print(f"Dimensione attesa feature map: {H_feat}x{W_feat}")
     print(f"Numero classi (patches): {num_classes}")
     print(f"Loss Teorica (Target): {expected_loss:.4f}")
+    
     with torch.no_grad():
         feat_src = model.image_encoder(src) #output atteso: [1,256,64,64]
         feat_trg = model.image_encoder(trg)

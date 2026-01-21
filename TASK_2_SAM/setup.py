@@ -3,28 +3,29 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # 1. Funzione per configurare i layer da allenare
-def configure_model(sam_model, unfreeze_last_n_layers):
+def configure_model(model, unfreeze_last_n_layers):
     # Congela tutto inizialmente
-    for param in sam_model.image_encoder.parameters():
+    for param in model.image_encoder.parameters():
         param.requires_grad = False
     
-    # Scongela solo gli ultimi N blocchi
-    blocks = sam_model.image_encoder.blocks
-    
-    if unfreeze_last_n_layers > 0:
-        blocks_to_train = blocks[-unfreeze_last_n_layers :]
-        print(f"🔓 Scongelamento degli ultimi {len(blocks_to_train)} blocchi.")
-        for block in blocks_to_train:
-            for param in block.parameters():
-                param.requires_grad = True
+    # Scongela anche il neck (utile per l'adattamento finale)
+    for param in model.image_encoder.neck.parameters():
+        param.requires_grad = True
 
-        # Scongela anche il neck (utile per l'adattamento finale)
-        for param in sam_model.image_encoder.neck.parameters():
+    # Scongela solo gli ultimi N blocchi
+    blocks_to_train = model.image_encoder.blocks[-unfreeze_last_n_layers :]
+
+    print(f"🔓 Scongelamento degli ultimi {len(blocks_to_train)} blocchi.")
+    for block in blocks_to_train:
+        for param in block.parameters():
             param.requires_grad = True
     
     # Conta parametri
-    trainable = sum(p.numel() for p in sam_model.image_encoder.parameters() if p.requires_grad)
-    print(f"Parametri addestrabili: {trainable / 1e6:.2f} M")
+    trainable_params = sum(p.numel() for p in model.image_encoder.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in model.image_encoder.parameters())
+    print(f"--- Configurazione Fine-Tuning ({unfreeze_last_n_layers} blocchi) ---")
+    print(f"Parametri totali: {total_params:,}")
+    print(f"Parametri allenabili: {trainable_params:,} ({(trainable_params/total_params)*100:.2f}%)")
 
 # 2. La Loss Function 
 class DenseCrossEntropyLoss(nn.Module):
