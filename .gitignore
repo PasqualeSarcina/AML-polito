@@ -8,6 +8,10 @@ dataset/*
 task2_dinov2/checkpoints/
 *.pth
 
+# Ignore model checkpoints
+task4_dinov2/checkpoints/
+*.pth
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
