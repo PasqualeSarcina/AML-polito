@@ -187,4 +187,7 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-
+# Dataset
+dataset/*
+!dataset/.gitkeep
+!data/dataset_downloader.py
