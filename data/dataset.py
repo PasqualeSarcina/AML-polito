@@ -3,6 +3,7 @@ r""" Superclass for semantic correspondence datasets """
 import os
 from collections import defaultdict
 from pathlib import Path
+from typing import Literal
 
 from torch.ao.nn.quantized.functional import threshold
 from torch.utils.data import Dataset
@@ -23,13 +24,17 @@ def get_pckthres(bb_annotation, alpha: float):
 class CorrespondenceDataset(Dataset):
     r""" Parent class of PFPascal, PFWillow, and SPair """
 
-    def __init__(self, dataset: str, datatype: str, transform = None):
+    def __init__(self, dataset: str, datatype: Literal["train", "test", "val"], transform = None):
         '''
         dataset: pfwillow, pfpascal, spair.
         datatype: trn, test or val.
         '''
         """ CorrespondenceDataset constructor """
         super().__init__()
+
+        if datatype not in ["train", "test", "val"]:
+            raise ValueError(f"datatype must be 'train', 'test' or 'val', but got {datatype}.")
+
         self.dataset_dir = os.path.join(os.path.dirname(Path(__file__).absolute()), '..', 'dataset')
         self.dataset = dataset
         self.datatype = datatype

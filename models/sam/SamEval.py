@@ -5,18 +5,14 @@ from pathlib import Path
 
 import torch
 from segment_anything import SamPredictor, sam_model_registry
-from torch.utils.data import DataLoader
-from tqdm import tqdm
 
-from data.ap10k import AP10KDataset
-from data.pfpascal import PFPascalDataset
-from data.pfwillow import PFWillowDataset
-from data.spair import SPairDataset
+from tqdm import tqdm
 from models.sam.PreProcess import PreProcess
 from utils.soft_argmax_window import soft_argmax_window
 from utils.utils_convert import pixel_to_patch_idx, patch_idx_to_pixel
 from utils.utils_download import download
 from utils.utils_featuremaps import save_featuremap, load_featuremap
+from utils.utils_init_dataloader import init_dataloader
 from utils.utils_results import CorrespondenceResult
 
 
@@ -28,10 +24,11 @@ class SamEval:
         self.wsam_win_size = args.wsam_win_size
         self.wsam_beta = args.wsam_beta
         self.device = args.device
-        # self.using_colab = args.using_colab
         self.base_dir = args.base_dir
         self._init_model()
-        self._init_dataset()
+
+        transform = PreProcess(sam_transform=self.transform)
+        self.dataset, self.dataloader = init_dataloader(self.dataset_name, 'test', transform=transform)
 
         self.feat_dir = Path(self.base_dir) / "data" / "features" / "sam"
         self.processed_img = defaultdict(set)
@@ -53,23 +50,6 @@ class SamEval:
         sam.eval()
         self.predictor = SamPredictor(sam)
         self.transform = self.predictor.transform
-
-    def _init_dataset(self):
-        transform = PreProcess(sam_transform=self.transform)
-        match self.dataset_name:
-            case 'spair-71k':
-                self.dataset = SPairDataset(datatype='test', transform=transform, dataset_size='large')
-            case 'pf-pascal':
-                self.dataset = PFPascalDataset(datatype='test', transform=transform)
-            case 'pf-willow':
-                self.dataset = PFWillowDataset(datatype='test', transform=transform)
-            case 'ap-10k':
-                self.dataset = AP10KDataset(datatype='test', transform=transform)
-
-        def collate_single(batch_list):
-            return batch_list[0]
-
-        self.dataloader = DataLoader(self.dataset, num_workers=4, batch_size=1, collate_fn=collate_single)
 
     def _compute_features(self, img_tensor: torch.Tensor, img_size: torch.Size, img_name: str,
                           category: str) -> torch.Tensor:

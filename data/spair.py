@@ -1,4 +1,6 @@
 import json
+from typing import Literal
+
 from data.dataset import CorrespondenceDataset
 import os
 
@@ -6,7 +8,7 @@ from data.dataset_downloader import download_spair
 
 
 class SPairDataset(CorrespondenceDataset):
-    def __init__(self, dataset_size: str, datatype: str, transform = None):
+    def __init__(self, dataset_size: str, datatype: Literal["train", "test", "val"], transform = None):
         super().__init__(dataset='spair', datatype=datatype, transform=transform)
 
         self.spair_dir = os.path.join(self.dataset_dir, 'SPair-71k')

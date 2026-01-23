@@ -5,7 +5,6 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
-from torchvision import transforms
 from tqdm import tqdm
 
 from data.ap10k import AP10KDataset
@@ -17,6 +16,7 @@ from models.dift.SDFeaturizer import SDFeaturizer
 from utils.soft_argmax_window import soft_argmax_window
 from utils.utils_convert import pixel_to_patch_idx, patch_idx_to_pixel
 from utils.utils_featuremaps import save_featuremap, load_featuremap
+from utils.utils_init_dataloader import init_dataloader
 from utils.utils_results import CorrespondenceResult
 
 
@@ -34,28 +34,13 @@ class DiftEval:
 
         self.feat_dir = Path(self.base_dir) / "data" / "features" / "dift"
 
-        self._init_dataset()
+        transform = PreProcess(ensemble_size=self.enseble_size)
+        self.dataset, self.dataloader = init_dataloader(self.dataset_name, 'test', transform=transform)
+
         self.processed_img = defaultdict(set)
 
         categories = self.dataset.get_categories()
         self.prompt_embeds = self.featurizer.encode_category_prompts(categories)
-
-    def _init_dataset(self):
-        transforms = PreProcess(ensemble_size=self.enseble_size)
-        match self.dataset_name:
-            case 'spair-71k':
-                self.dataset = SPairDataset(datatype='test', transform=transforms, dataset_size='large')
-            case 'pf-pascal':
-                self.dataset = PFPascalDataset(datatype='test', transform=transforms)
-            case 'pf-willow':
-                self.dataset = PFWillowDataset(datatype='test', transform=transforms)
-            case 'ap-10k':
-                self.dataset = AP10KDataset(datatype='test', transform=transforms)
-
-        def collate_single(batch_list):
-            return batch_list[0]
-
-        self.dataloader = DataLoader(self.dataset, num_workers=4, batch_size=1, collate_fn=collate_single)
 
     def compute_features(self, img_tensor: torch.Tensor, img_name: str,
                           category: str, up_ft_index: list[int] | int = 1, t:int = 261) -> torch.Tensor:

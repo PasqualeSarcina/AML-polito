@@ -1,4 +1,5 @@
 import csv
+from typing import Literal
 
 import scipy.io as sio
 import os
@@ -9,7 +10,7 @@ from data.dataset_downloader import download_pfpascal
 
 
 class PFPascalDataset(CorrespondenceDataset):
-    def __init__(self, datatype: str, transform = None):
+    def __init__(self, datatype: Literal["train", "test", "val"], transform = None):
         super().__init__(dataset='pfpascal', datatype=datatype, transform=transform)
 
         self.pfpascal_dir = os.path.join(self.dataset_dir, 'pf-pascal')

@@ -8,16 +8,14 @@ from data.dataset_downloader import download_pfwillow
 
 
 class PFWillowDataset(CorrespondenceDataset):
-    def __init__(self, datatype: str, transform=None):
-        if datatype != 'test':
-            raise ValueError("PF-Willow dataset only supports 'test' datatype.")
-        super().__init__(dataset='pfwillow', datatype=datatype, transform=transform)
+    def __init__(self, transform=None):
+        super().__init__(dataset='pfwillow', datatype="test", transform=transform)
 
         self.pfwillow_dir = os.path.join(self.dataset_dir, 'pf-willow')
         if not os.path.exists(self.pfwillow_dir):
             download_pfwillow(self.dataset_dir)
 
-        pairs_csv = os.path.join(self.pfwillow_dir, f"{datatype}_pairs.csv")
+        pairs_csv = os.path.join(self.pfwillow_dir, "test_pairs.csv")
 
         with open(pairs_csv, newline="") as f:
             reader = csv.DictReader(f)

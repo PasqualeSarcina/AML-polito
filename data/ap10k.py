@@ -2,6 +2,7 @@ import json
 import math
 import os
 import random
+from typing import Literal
 
 import numpy as np
 import itertools
@@ -11,7 +12,7 @@ from data.dataset_downloader import download_ap10k
 
 
 class AP10KDataset(CorrespondenceDataset):
-    def __init__(self, datatype: str, transform=None, min_kps=3):
+    def __init__(self, datatype: Literal["train", "test", "val"], transform=None, min_kps=3):
         super().__init__(dataset='ap10k', datatype=datatype, transform=transform)
 
         self.ap10kdir = os.path.join(self.dataset_dir, 'ap-10k')

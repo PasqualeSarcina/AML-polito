@@ -13,6 +13,7 @@ from models.dinov2.PreProcess import PreProcess
 from utils.soft_argmax_window import soft_argmax_window
 from utils.utils_convert import pixel_to_patch_idx, patch_idx_to_pixel
 from utils.utils_featuremaps import save_featuremap, load_featuremap
+from utils.utils_init_dataloader import init_dataloader
 from utils.utils_results import CorrespondenceResult
 
 
@@ -27,7 +28,9 @@ class Dinov2Eval:
         self.base_dir = args.base_dir
 
         self._init_model()
-        self._init_dataset()
+
+        transform = PreProcess(out_dim=(518, 518))
+        self.dataset, self.dataloader = init_dataloader(self.dataset_name, 'test', transform=transform)
 
         self.feat_dir = Path(self.base_dir) / "data" / "features" / "dinov2"
         self.processed_img = defaultdict(set)
@@ -46,23 +49,6 @@ class Dinov2Eval:
             model.load_state_dict(new_state_dict, strict=False)
 
         self.model = model.to(self.device).eval()
-
-    def _init_dataset(self):
-        transform = PreProcess(out_dim=(518, 518))
-        match self.dataset_name:
-            case 'spair-71k':
-                self.dataset = SPairDataset(datatype='test', transform=transform,dataset_size='large')
-            case 'pf-pascal':
-                self.dataset = PFPascalDataset(datatype='test', transform=transform)
-            case 'pf-willow':
-                self.dataset = PFWillowDataset(datatype='test', transform=transform)
-            case 'ap-10k':
-                self.dataset = AP10KDataset(datatype='test', transform=transform)
-
-        def collate_single(batch_list):
-            return batch_list[0]
-
-        self.dataloader = DataLoader(self.dataset, num_workers=4, batch_size=1, collate_fn=collate_single)
 
     def compute_features(self, img_tensor: torch.Tensor, img_name: str,
                           category: str) -> torch.Tensor:
