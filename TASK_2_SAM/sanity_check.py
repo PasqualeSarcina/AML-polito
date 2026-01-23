@@ -9,7 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data.dataset import SPairDataset
 from segment_anything import sam_model_registry
 from utils.common import download_sam_model
-from TASK_2_SAM.setup import DenseCrossEntropyLoss
+from TASK_2_SAM.setup import MyCrossEntropyLoss
 
 def seed_everything(seed=42):
     random.seed(seed)
@@ -45,7 +45,7 @@ def check_initial_loss():
     model.eval()
 
     # 3. Initialize YOUR Loss Function
-    criterion = DenseCrossEntropyLoss(temperature=1.0).to(device)
+    criterion = MyCrossEntropyLoss(temperature=1.0).to(device)
 
     # 4. Prepare Batch
     src = batch['src_img'].to(device)

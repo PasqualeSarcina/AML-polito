@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from TASK_2_SAM.setup import DenseCrossEntropyLoss, configure_model
+from TASK_2_SAM.setup import MyCrossEntropyLoss, configure_model
 from utils.common import download_sam_model
 from data.dataset import SPairDataset
 
@@ -36,7 +36,7 @@ def coarse_grid(dataloader, lr, wd, device, checkpoint_dir):
     LAYERS_TO_UNFREEZE = 1
     configure_model(model, unfreeze_last_n_layers=LAYERS_TO_UNFREEZE)
 
-    criterion = DenseCrossEntropyLoss(temperature=0.07).to(device)
+    criterion = MyCrossEntropyLoss(temperature=0.07).to(device)
     
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
                                 lr=lr, weight_decay=wd)

@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from TASK_3.window_softmax import window_softmax
+from TASK_3_SAM.window_softmax import window_softmax
 
 def extract_features(model, img_tensor, model_type='sam'):
     """

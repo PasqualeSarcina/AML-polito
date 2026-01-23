@@ -11,7 +11,7 @@ import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from TASK_2_SAM.setup import DenseCrossEntropyLoss, configure_model
+from TASK_2_SAM.setup import MyCrossEntropyLoss, configure_model
 from utils.common import download_sam_model
 from data.dataset import SPairDataset
 
@@ -50,7 +50,7 @@ def find_lr():
 
     initial_state = copy.deepcopy(model.state_dict()) # Salva lo stato iniziale per reset
 
-    criterion = DenseCrossEntropyLoss(temperature=0.07).to(device)
+    criterion = MyCrossEntropyLoss(temperature=0.07).to(device)
 
     for lr in learning_rates:
         print(f"\n--- Testando Learning Rate: {lr} ---")

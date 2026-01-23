@@ -7,7 +7,7 @@ from segment_anything import sam_model_registry
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from TASK_2_SAM.setup import DenseCrossEntropyLoss, configure_model
+from TASK_2_SAM.setup import MyCrossEntropyLoss, configure_model
 from utils.common import download_sam_model
 from data.dataset import SPairDataset
 
@@ -32,7 +32,7 @@ def check_overfitting():
     model.train()
 
     # 3. Initialize YOUR Loss Function
-    criterion = DenseCrossEntropyLoss(temperature=0.07).to(device)
+    criterion = MyCrossEntropyLoss(temperature=0.07).to(device)
 
     # 4. Prepare Batch
     fixed_batches = []

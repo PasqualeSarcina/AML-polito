@@ -28,65 +28,51 @@ def configure_model(model, unfreeze_last_n_layers):
     print(f"Parametri allenabili: {trainable_params:,} ({(trainable_params/total_params)*100:.2f}%)")
 
 # 2. La Loss Function 
-class DenseCrossEntropyLoss(nn.Module):
+class MyCrossEntropyLoss(nn.Module):
     def __init__(self, temperature=0.1):
         super().__init__()
+        self.stride = 16
         self.temperature = temperature
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss(reduction='none', label_smoothing=0.1)
 
-    # NUOVA IMPLEMENTAZIONE CONSIGLIATA (in setup.py)
-    def forward(self, feats_src, feats_trg, kps_src, kps_trg, kps_mask):
-        B, C, Hf, Wf = feats_src.shape
-        # SAM scala l'immagine di 1024 a feature map di 64, quindi stride=16
-        STRIDE = 16 
+    def forward(self, feat_src, feat_trg, kps_src, kps_trg, valid_mask):
+        B, C, H, W = feat_src.shape
+        _, K, _ = kps_src.shape
+
+        # 1. Normalizzazione coordinate Sorgente per grid_sample [-1, 1]
+        img_h, img_w = H * self.stride, W * self.stride
         
-        # 1. Normalizziamo le feature map (già presente nel tuo codice, ottimo)
-        feats_src = F.normalize(feats_src, dim=1)
-        feats_trg = F.normalize(feats_trg, dim=1)
+        # Grid sample vuole (x, y) normalizzati
+        kps_src_norm = kps_src.clone()
+        kps_src_norm[..., 0] = 2 * (kps_src[..., 0] / (img_w - 1)) - 1
+        kps_src_norm[..., 1] = 2 * (kps_src[..., 1] / (img_h - 1)) - 1
+        kps_src_norm = kps_src_norm.unsqueeze(2) # [B, K, 1, 2]
+
+        # 2. Estrazione Descrittori Sorgente (Vettorizzata)
+        # [B, C, H, W] -> sample -> [B, C, K, 1] -> [B, K, C]
+        desc_src = F.grid_sample(feat_src, kps_src_norm, align_corners=True, mode='bilinear')
+        desc_src = desc_src.squeeze(3).permute(0, 2, 1) 
+        desc_src = F.normalize(desc_src, dim=-1) # L2 Norm cruciale
+
+        # 3. Preparazione Target (Flattening)
+        feat_trg_flat = feat_trg.flatten(2) # [B, C, H*W]
+        feat_trg_flat = F.normalize(feat_trg_flat, dim=1)
+
+        # 4. Calcolo Similarità (Batch Matrix Mult - Veloce!)
+        # [B, K, C] @ [B, C, HW] -> [B, K, HW]
+        logits = torch.bmm(desc_src, feat_trg_flat) / self.temperature
+
+        # 5. Calcolo Label Target (Indici piatti)
+        # Usiamo lo stride corretto passato nell'init
+        fx_trg = (kps_trg[..., 0] / self.stride).round().long().clamp(0, W - 1)
+        fy_trg = (kps_trg[..., 1] / self.stride).round().long().clamp(0, H - 1)
+        target_indices = (fy_trg * W) + fx_trg # [B, K]
+
+        # 6. Calcolo Loss e Mascheramento
+        loss = self.ce_loss(logits.flatten(0, 1), target_indices.flatten()) # [B*K]
+        loss = loss.view(B, K)
         
-        loss_total = 0.0
-        valid_samples = 0
+        # Media pesata solo sui keypoint validi
+        final_loss = (loss * valid_mask).sum() / (valid_mask.sum() + 1e-6)
 
-        for b in range(B):
-            mask = kps_mask[b]
-            if mask.sum() == 0: continue
-
-            # Prendiamo i keypoint validi
-            valid_kps_src = kps_src[b][mask].unsqueeze(0).unsqueeze(2) # (1, N, 1, 2)
-            
-            # --- ESTRAZIONE SORGENTE CON GRID_SAMPLE ---
-            # Normalizziamo le coordinate tra -1 e 1 per grid_sample
-            # Nota: grid_sample vuole (x, y). Assicurati che kps siano (x, y).
-            # H_img = Hf * STRIDE, W_img = Wf * STRIDE
-            
-            # Normalizzazione: 2 * (coord / (size-1)) - 1
-            grid_src = torch.zeros_like(valid_kps_src)
-            grid_src[..., 0] = 2 * (valid_kps_src[..., 0] / (Wf * STRIDE - 1)) - 1
-            grid_src[..., 1] = 2 * (valid_kps_src[..., 1] / (Hf * STRIDE - 1)) - 1
-            
-            # Estraiamo i vettori interpolati (B, C, N, 1) -> (N, C)
-            # align_corners=True è standard per SAM
-            query_feats = F.grid_sample(feats_src[b:b+1], grid_src, align_corners=True, mode='bilinear')
-            query_feats = query_feats.squeeze(0).squeeze(2).permute(1, 0) # (N, C)
-
-            # --- TARGET (Ground Truth) ---
-            valid_kps_trg = kps_trg[b][mask]
-            
-            # Flatten target map per la cross entropy
-            trg_flat = feats_trg[b].view(C, -1) # (C, H*W)
-            
-            # Calcolo Logits (Similarità)
-            logits = torch.mm(query_feats, trg_flat) / self.temperature # (N, 4096)
-            
-            # Creiamo gli indici target corretti
-            fx_trg = (valid_kps_trg[:, 0] / STRIDE).round().long().clamp(0, Wf-1)
-            fy_trg = (valid_kps_trg[:, 1] / STRIDE).round().long().clamp(0, Hf-1)
-            target_indices = fy_trg * Wf + fx_trg
-            
-            loss_total += self.criterion(logits, target_indices)
-            valid_samples += 1
-
-        if valid_samples > 0:
-            return loss_total / valid_samples
-        else:
-            return torch.tensor(0.0, device=feats_src.device, requires_grad=True)
+        return final_loss
