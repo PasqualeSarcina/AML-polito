@@ -68,17 +68,17 @@ class DiftEval:
         self.processed_img[category_opt].add(img_name)
         return unet_ft
 
-
     def _compute_pca(self, sd_src_featmap, sd_trg_featmap):
         """
-        co-PCA su 3 scale (s5,s4,s3) e costruzione descriptor SD:
-          - input layer: sd_*_featmap[0/1/2] = (s5/s4/s3)
-          - output: sd_src_desc, sd_trg_desc: [1,1,P, Dsd]
-                   dims_used: [d_s5, d_s4, d_s3] (per slicing/pesi)
+        co-PCA su 3 scale (s5,s4,s3) e costruzione feature map ridotte:
+          - input: liste/tuple di 3 tensori (s5,s4,s3), ciascuno [C,H,W] o [1,C,H,W]
+          - output: src_proc, trg_proc: [1, Dsd, Hc, Wc]  (Hc,Wc = self.featmap_size)
+                  dims_used: [d_s5, d_s4, d_s3]
         """
         PCA_DIMS = [256, 256, 256]  # s5,s4,s3
         WEIGHT = [1, 1, 1]
-        dims_used: List[int] = []
+
+        dims_used = []
         src_red_list = []
         trg_red_list = []
 
@@ -89,13 +89,11 @@ class DiftEval:
             fs = src_layers[i]
             ft = trg_layers[i]
 
-            # -> [1,C,H,W]
             if fs.ndim == 3:
                 fs = fs.unsqueeze(0)
             if ft.ndim == 3:
                 ft = ft.unsqueeze(0)
 
-            # rescale a griglia comune (H,W)
             if fs.shape[-2:] != self.featmap_size:
                 fs = F.interpolate(fs, size=self.featmap_size, mode="bilinear", align_corners=False)
             if ft.shape[-2:] != self.featmap_size:
@@ -103,50 +101,36 @@ class DiftEval:
 
             _, C, H, W = fs.shape
             P = H * W
-            q = min(out_dim, C)  # robust
+            q = min(out_dim, C)
             dims_used.append(q)
 
-            # [1,C,H,W] -> [P,C]
             fs_tok = fs.permute(0, 2, 3, 1).reshape(P, C)
             ft_tok = ft.permute(0, 2, 3, 1).reshape(P, C)
 
-            # co-PCA su [2P,C]
             X = torch.cat([fs_tok, ft_tok], dim=0)  # [2P,C]
             mean = X.mean(dim=0, keepdim=True)
             Xc = (X - mean).float()
 
-            _, _, V = torch.pca_lowrank(Xc, q=q)    # V: [C,q]
-            Z = Xc @ V[:, :q]                       # [2P,q]
+            _, _, V = torch.pca_lowrank(Xc, q=q)  # V: [C,q]
+            Z = Xc @ V  # [2P,q]
 
             Zs = Z[:P, :]
             Zt = Z[P:, :]
 
-            # -> [1,q,H,W]
-            fs_red = Zs.reshape(1, H, W, q).permute(0, 3, 1, 2).contiguous().to(fs.dtype)
-            ft_red = Zt.reshape(1, H, W, q).permute(0, 3, 1, 2).contiguous().to(ft.dtype)
+            fs_red = Zs.reshape(1, H, W, q).permute(0, 3, 1, 2).contiguous()
+            ft_red = Zt.reshape(1, H, W, q).permute(0, 3, 1, 2).contiguous()
+
+            # pesi per scala (sul blocco canali di quella scala)
+            fs_red *= WEIGHT[i]
+            ft_red *= WEIGHT[i]
 
             src_red_list.append(fs_red)
             trg_red_list.append(ft_red)
 
-        # concat canale: [1, Dsd, H, W]
-        sd_src_proc = torch.cat(src_red_list, dim=1)
-        sd_trg_proc = torch.cat(trg_red_list, dim=1)
+        src_proc = torch.cat(src_red_list, dim=1)  # [1,Dsd,H,W]
+        trg_proc = torch.cat(trg_red_list, dim=1)  # [1,Dsd,H,W]
 
-        # -> [1,1,P,Dsd]
-        sd_src_desc = sd_src_proc.reshape(1, -1, self.P).permute(0, 2, 1).unsqueeze(1).contiguous()
-        sd_trg_desc = sd_trg_proc.reshape(1, -1, self.P).permute(0, 2, 1).unsqueeze(1).contiguous()
-
-        # pesi intra-SD (su dims reali)
-        d0, d1, d2 = dims_used
-        sd_src_desc[..., :d0] *= WEIGHT[0]
-        sd_src_desc[..., d0:d0 + d1] *= WEIGHT[1]
-        sd_src_desc[..., d0 + d1:d0 + d1 + d2] *= WEIGHT[2]
-
-        sd_trg_desc[..., :d0] *= WEIGHT[0]
-        sd_trg_desc[..., d0:d0 + d1] *= WEIGHT[1]
-        sd_trg_desc[..., d0 + d1:d0 + d1 + d2] *= WEIGHT[2]
-
-        return sd_src_desc, sd_trg_desc, dims_used
+        return src_proc, trg_proc, dims_used
 
     def evaluate(self) -> list[CorrespondenceResult]:
         results = []
@@ -165,11 +149,6 @@ class DiftEval:
                 # features: [1,C,48,48]
                 src_ft = self.compute_features(batch["src_img"], batch["src_imname"], category, up_ft_index=[0, 1, 2], t=100)
                 trg_ft = self.compute_features(batch["trg_img"], batch["trg_imname"], category, up_ft_index=[0, 1, 2], t=100)
-
-                if src_ft.ndim == 3:  # [C,48,48] -> [1,C,48,48]
-                    src_ft = src_ft.unsqueeze(0)
-                if trg_ft.ndim == 3:
-                    trg_ft = trg_ft.unsqueeze(0)
 
                 src_ft, trg_ft, _ = self._compute_pca(src_ft, trg_ft)
 
