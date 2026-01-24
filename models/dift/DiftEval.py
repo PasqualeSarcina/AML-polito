@@ -2,15 +2,13 @@ import gc
 import math
 from collections import defaultdict
 from pathlib import Path
+from typing import List
 
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import torch.nn.functional as F
 
-from data.ap10k import AP10KDataset
-from data.pfpascal import PFPascalDataset
-from data.pfwillow import PFWillowDataset
-from data.spair import SPairDataset
 from models.dift.PreProcess import PreProcess
 from models.dift.SDFeaturizer import SDFeaturizer
 from utils.soft_argmax_window import soft_argmax_window
@@ -31,6 +29,11 @@ class DiftEval:
         self.enseble_size = args.ensemble_size
 
         self.featurizer = SDFeaturizer(device=self.device)
+
+        self.sd_stride = 16
+        self.featmap_size: tuple[int, int] = (48, 48)  # H,W
+        self.H, self.W = self.featmap_size
+        self.P = self.H * self.W
 
         self.feat_dir = Path(self.base_dir) / "data" / "features" / "dift"
 
@@ -65,6 +68,86 @@ class DiftEval:
         self.processed_img[category_opt].add(img_name)
         return unet_ft
 
+
+    def _compute_pca(self, sd_src_featmap, sd_trg_featmap):
+        """
+        co-PCA su 3 scale (s5,s4,s3) e costruzione descriptor SD:
+          - input layer: sd_*_featmap[0/1/2] = (s5/s4/s3)
+          - output: sd_src_desc, sd_trg_desc: [1,1,P, Dsd]
+                   dims_used: [d_s5, d_s4, d_s3] (per slicing/pesi)
+        """
+        PCA_DIMS = [256, 256, 256]  # s5,s4,s3
+        WEIGHT = [1, 1, 1]
+        dims_used: List[int] = []
+        src_red_list = []
+        trg_red_list = []
+
+        src_layers = [sd_src_featmap[0], sd_src_featmap[1], sd_src_featmap[2]]
+        trg_layers = [sd_trg_featmap[0], sd_trg_featmap[1], sd_trg_featmap[2]]
+
+        for i, out_dim in enumerate(PCA_DIMS):
+            fs = src_layers[i]
+            ft = trg_layers[i]
+
+            # -> [1,C,H,W]
+            if fs.ndim == 3:
+                fs = fs.unsqueeze(0)
+            if ft.ndim == 3:
+                ft = ft.unsqueeze(0)
+
+            # rescale a griglia comune (H,W)
+            if fs.shape[-2:] != self.featmap_size:
+                fs = F.interpolate(fs, size=self.featmap_size, mode="bilinear", align_corners=False)
+            if ft.shape[-2:] != self.featmap_size:
+                ft = F.interpolate(ft, size=self.featmap_size, mode="bilinear", align_corners=False)
+
+            _, C, H, W = fs.shape
+            P = H * W
+            q = min(out_dim, C)  # robust
+            dims_used.append(q)
+
+            # [1,C,H,W] -> [P,C]
+            fs_tok = fs.permute(0, 2, 3, 1).reshape(P, C)
+            ft_tok = ft.permute(0, 2, 3, 1).reshape(P, C)
+
+            # co-PCA su [2P,C]
+            X = torch.cat([fs_tok, ft_tok], dim=0)  # [2P,C]
+            mean = X.mean(dim=0, keepdim=True)
+            Xc = (X - mean).float()
+
+            _, _, V = torch.pca_lowrank(Xc, q=q)    # V: [C,q]
+            Z = Xc @ V[:, :q]                       # [2P,q]
+
+            Zs = Z[:P, :]
+            Zt = Z[P:, :]
+
+            # -> [1,q,H,W]
+            fs_red = Zs.reshape(1, H, W, q).permute(0, 3, 1, 2).contiguous().to(fs.dtype)
+            ft_red = Zt.reshape(1, H, W, q).permute(0, 3, 1, 2).contiguous().to(ft.dtype)
+
+            src_red_list.append(fs_red)
+            trg_red_list.append(ft_red)
+
+        # concat canale: [1, Dsd, H, W]
+        sd_src_proc = torch.cat(src_red_list, dim=1)
+        sd_trg_proc = torch.cat(trg_red_list, dim=1)
+
+        # -> [1,1,P,Dsd]
+        sd_src_desc = sd_src_proc.reshape(1, -1, self.P).permute(0, 2, 1).unsqueeze(1).contiguous()
+        sd_trg_desc = sd_trg_proc.reshape(1, -1, self.P).permute(0, 2, 1).unsqueeze(1).contiguous()
+
+        # pesi intra-SD (su dims reali)
+        d0, d1, d2 = dims_used
+        sd_src_desc[..., :d0] *= WEIGHT[0]
+        sd_src_desc[..., d0:d0 + d1] *= WEIGHT[1]
+        sd_src_desc[..., d0 + d1:d0 + d1 + d2] *= WEIGHT[2]
+
+        sd_trg_desc[..., :d0] *= WEIGHT[0]
+        sd_trg_desc[..., d0:d0 + d1] *= WEIGHT[1]
+        sd_trg_desc[..., d0 + d1:d0 + d1 + d2] *= WEIGHT[2]
+
+        return sd_src_desc, sd_trg_desc, dims_used
+
     def evaluate(self) -> list[CorrespondenceResult]:
         results = []
 
@@ -80,13 +163,15 @@ class DiftEval:
                 category = batch["category"]
 
                 # features: [1,C,48,48]
-                src_ft = self.compute_features(batch["src_img"], batch["src_imname"], category)
-                trg_ft = self.compute_features(batch["trg_img"], batch["trg_imname"], category)
+                src_ft = self.compute_features(batch["src_img"], batch["src_imname"], category, up_ft_index=[0, 1, 2], t=100)
+                trg_ft = self.compute_features(batch["trg_img"], batch["trg_imname"], category, up_ft_index=[0, 1, 2], t=100)
 
                 if src_ft.ndim == 3:  # [C,48,48] -> [1,C,48,48]
                     src_ft = src_ft.unsqueeze(0)
                 if trg_ft.ndim == 3:
                     trg_ft = trg_ft.unsqueeze(0)
+
+                src_ft, trg_ft, _ = self._compute_pca(src_ft, trg_ft)
 
                 # keypoints già nello spazio 768×768
                 src_kps = batch["src_kps"].to(self.device)  # (N,2) in 768

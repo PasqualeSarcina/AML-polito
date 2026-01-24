@@ -4,14 +4,8 @@ from typing import List
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from tqdm import tqdm
-
-from data.ap10k import AP10KDataset
 from data.dataset import get_pckthres
-from data.pfpascal import PFPascalDataset
-from data.pfwillow import PFWillowDataset
-from data.spair import SPairDataset
 
 from models.dift import DiftEval
 from models.dift.PreProcess import PreProcess as DiftPreProcess
@@ -20,6 +14,7 @@ from models.dinov2.PreProcess import PreProcess as Dinov2PreProcess
 
 from utils.soft_argmax_window import soft_argmax_window
 from utils.utils_convert import pixel_to_patch_idx, patch_idx_to_pixel
+from utils.utils_init_dataloader import init_dataloader
 from utils.utils_results import CorrespondenceResult
 
 
@@ -49,27 +44,7 @@ class SdFuseDino:
         self.sd_preproc = DiftPreProcess(out_dim=(self.H * self.sd_stride, self.W * self.sd_stride))
         self.dino_preproc = Dinov2PreProcess(out_dim=(self.H * self.dino_stride, self.W * self.dino_stride))
 
-        self._init_dataset()
-
-    def _init_dataset(self):
-        match self.dataset_name:
-            case "spair-71k":
-                self.dataset = SPairDataset(datatype="test", dataset_size="small")
-            case "pf-pascal":
-                self.dataset = PFPascalDataset(datatype="test")
-            case "pf-willow":
-                self.dataset = PFWillowDataset(datatype="test")
-            case "ap-10k":
-                self.dataset = AP10KDataset(datatype="test")
-            case _:
-                raise ValueError(f"Dataset non supportato: {self.dataset_name}")
-
-        self.dataloader = DataLoader(
-            self.dataset,
-            num_workers=4,
-            batch_size=1,
-            collate_fn=lambda bl: bl[0],  # batch_size=1
-        )
+        self.dataset, self.dataloader = init_dataloader(self.dataset_name, 'test')
 
     def _compute_features(self, batch: dict):
         # ----------------------------
