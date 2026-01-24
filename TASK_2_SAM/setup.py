@@ -27,7 +27,71 @@ def configure_model(model, unfreeze_last_n_layers):
     print(f"Parametri totali: {total_params:,}")
     print(f"Parametri allenabili: {trainable_params:,} ({(trainable_params/total_params)*100:.2f}%)")
 
-# 2. La Loss Function 
+# 2. Nuova Loss Function con grid_sample
+class DenseCrossEntropyLoss(nn.Module):
+    def __init__(self, temperature=0.1):
+        super().__init__()
+        self.temperature = temperature
+        self.criterion = nn.CrossEntropyLoss()
+
+    # NUOVA IMPLEMENTAZIONE CONSIGLIATA (in setup.py)
+    def forward(self, feats_src, feats_trg, kps_src, kps_trg, kps_mask):
+        B, C, Hf, Wf = feats_src.shape
+        # SAM scala l'immagine di 1024 a feature map di 64, quindi stride=16
+        STRIDE = 16 
+        
+        # 1. Normalizziamo le feature map (già presente nel tuo codice, ottimo)
+        feats_src = F.normalize(feats_src, dim=1)
+        feats_trg = F.normalize(feats_trg, dim=1)
+        
+        loss_total = 0.0
+        valid_samples = 0
+
+        for b in range(B):
+            mask = kps_mask[b]
+            if mask.sum() == 0: continue
+
+            # Prendiamo i keypoint validi
+            valid_kps_src = kps_src[b][mask].unsqueeze(0).unsqueeze(2) # (1, N, 1, 2)
+            
+            # --- ESTRAZIONE SORGENTE CON GRID_SAMPLE ---
+            # Normalizziamo le coordinate tra -1 e 1 per grid_sample
+            # Nota: grid_sample vuole (x, y). Assicurati che kps siano (x, y).
+            # H_img = Hf * STRIDE, W_img = Wf * STRIDE
+            
+            # Normalizzazione: 2 * (coord / (size-1)) - 1
+            grid_src = torch.zeros_like(valid_kps_src)
+            grid_src[..., 0] = 2 * (valid_kps_src[..., 0] / (Wf * STRIDE - 1)) - 1
+            grid_src[..., 1] = 2 * (valid_kps_src[..., 1] / (Hf * STRIDE - 1)) - 1
+            
+            # Estraiamo i vettori interpolati (B, C, N, 1) -> (N, C)
+            # align_corners=True è standard per SAM
+            query_feats = F.grid_sample(feats_src[b:b+1], grid_src, align_corners=True, mode='bilinear')
+            query_feats = query_feats.squeeze(0).squeeze(2).permute(1, 0) # (N, C)
+
+            # --- TARGET (Ground Truth) ---
+            valid_kps_trg = kps_trg[b][mask]
+            
+            # Flatten target map per la cross entropy
+            trg_flat = feats_trg[b].view(C, -1) # (C, H*W)
+            
+            # Calcolo Logits (Similarità)
+            logits = torch.mm(query_feats, trg_flat) / self.temperature # (N, 4096)
+            
+            # Creiamo gli indici target corretti
+            fx_trg = (valid_kps_trg[:, 0] / STRIDE).round().long().clamp(0, Wf-1)
+            fy_trg = (valid_kps_trg[:, 1] / STRIDE).round().long().clamp(0, Hf-1)
+            target_indices = fy_trg * Wf + fx_trg
+            
+            loss_total += self.criterion(logits, target_indices)
+            valid_samples += 1
+
+        if valid_samples > 0:
+            return loss_total / valid_samples
+        else:
+            return torch.tensor(0.0, device=feats_src.device, requires_grad=True)
+
+# 2. La Loss Function alternativa proposta 
 class MyCrossEntropyLoss(nn.Module):
     def __init__(self, temperature=0.1):
         super().__init__()
