@@ -176,4 +176,5 @@ cython_debug/
 # Dataset
 dataset/*
 !dataset/.gitkeep
-!data/dataset_downloader.py
+
+data/features/*
