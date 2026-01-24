@@ -1,4 +1,5 @@
 import os
+import sys
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -6,6 +7,8 @@ import numpy as np
 from tqdm import tqdm # Per la barra di caricamento
 import gc
 from collections import defaultdict
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data.dataset import SPairDataset
 from utils.geometry import extract_features, compute_correspondence
@@ -37,89 +40,70 @@ def evaluate_pck(model, dataloader, device, alpha=0.1):
 
     print(f"Inizio valutazione su {len(dataloader)} coppie...")
 
-    error_count = 0
-
     for i, batch in enumerate(tqdm(dataloader)):
-        try:
-            src_img = batch['src_img'].to(device)
-            trg_img = batch['trg_img'].to(device)
-            src_kps = batch['src_kps'][0] 
-            trg_kps = batch['trg_kps'][0].to(device) 
-            pck_threshold_base = batch['pck_threshold'][0].item()
+        src_img = batch['src_img'].to(device)
+        trg_img = batch['trg_img'].to(device)
+        src_kps = batch['src_kps'][0] 
+        trg_kps = batch['trg_kps'][0].to(device) 
+        pck_threshold_base = batch['pck_threshold'][0].item()
 
-            category = batch['category'][0]
+        category = batch['category'][0]
 
-            img_H, img_W = src_img.shape[2], src_img.shape[3]
+        img_H, img_W = src_img.shape[2], src_img.shape[3]
 
-            kps_mask = batch['kps_valid'][0].to(device)  #vettore di booleani [True, True, False, ...]
+        kps_mask = batch['kps_valid'][0].to(device)  #vettore di booleani [True, True, False, ...]
 
-            # 1. Estrai Features
-            src_feats = extract_features(model, src_img, model_type='sam')
-            trg_feats = extract_features(model, trg_img, model_type='sam')
+        # 1. Estrai Features
+        src_feats = extract_features(model, src_img, model_type='sam')
+        trg_feats = extract_features(model, trg_img, model_type='sam')
 
-            # 2. Calcola Corrispondenze
-            pred_kps = compute_correspondence(src_feats, trg_feats, src_kps, (img_H, img_W), softmax_flag=True)
-            pred_kps = pred_kps.to(device) 
-            pred_kps_valid = pred_kps[kps_mask]
-            trg_kps_valid = trg_kps[kps_mask]
+        # 2. Calcola Corrispondenze
+        pred_kps = compute_correspondence(src_feats, trg_feats, src_kps, (img_H, img_W), softmax_flag=True)
+        pred_kps = pred_kps.to(device) 
+        pred_kps_valid = pred_kps[kps_mask]
+        trg_kps_valid = trg_kps[kps_mask]
 
-            if len(trg_kps_valid) == 0:
-                continue
-            # 3. Valuta (PCK)
-            # Calcola distanza Euclidea tra predizione e ground truth
-            l2_dist = torch.norm(pred_kps_valid - trg_kps_valid, dim=1)
-
-            # Numero keypoints in questa immagine
-            n_kps = len(l2_dist)
-            
-            if n_kps > 0: # Skip se non ci sono keypoint (raro ma possibile)
-                # 4. Calcolo Corretti per diverse soglie
-                thr_01 = pck_threshold_base
-                thr_05 = pck_threshold_base * 0.5
-                thr_20 = pck_threshold_base * 2.0
-
-                # Bool tensors dei corretti
-                corr_01 = (l2_dist <= thr_01).sum().item()
-                corr_05 = (l2_dist <= thr_05).sum().item()
-                corr_20 = (l2_dist <= thr_20).sum().item()
-
-                # --- AGGIORNAMENTO GLOBALE (Per Keypoint) ---
-                correct_010_global += corr_01
-                correct_005_global += corr_05
-                correct_020_global += corr_20
-                total_kps_global += n_kps
-
-                # --- AGGIORNAMENTO PER IMMAGINE (Per Image) ---
-                # Calcoliamo la % per questa specifica immagine e la aggiungiamo alla lista
-                pck_010_per_img.append(corr_01 / n_kps)
-                pck_005_per_img.append(corr_05 / n_kps)
-                pck_020_per_img.append(corr_20 / n_kps)
-
-                # --- AGGIORNAMENTO PER CATEGORIA ---
-                category_stats[category]['total'] += n_kps
-                category_stats[category]['c_10'] += corr_01
-                category_stats[category]['c_05'] += corr_05
-                category_stats[category]['c_20'] += corr_20
-
-            #PULIZIA MEMORIA
-            del src_img, trg_img, src_feats, trg_feats, pred_kps, l2_dist
-
-        except RuntimeError as e:
-            # GESTIONE ERRORE GPU
-            error_count += 1
-            print(f"\n⚠️ Errore all'indice {i}: {e}")
-            print("Salto questa coppia e continuo...")
-            
-            # Se l'errore è grave (memoria corrotta), bisogna svuotare la cache
-            del batch
-            torch.cuda.empty_cache()
-            gc.collect()
+        if len(trg_kps_valid) == 0:
             continue
+        # 3. Valuta (PCK)
+        # Calcola distanza Euclidea tra predizione e ground truth
+        l2_dist = torch.norm(pred_kps_valid - trg_kps_valid, dim=1)
 
-        # PULIZIA MEMORIA PERIODICA
-        if i % 50 == 0:   #svuotiamo la cache ogni 50 iterazioni (farlo sempre rallenterebbe troppo)
-            torch.cuda.empty_cache()
+        # Numero keypoints in questa immagine
+        n_kps = len(l2_dist)
+        
+        if n_kps > 0: # Skip se non ci sono keypoint (raro ma possibile)
+            # 4. Calcolo Corretti per diverse soglie
+            thr_01 = pck_threshold_base
+            thr_05 = pck_threshold_base * 0.5
+            thr_20 = pck_threshold_base * 2.0
 
+            # Bool tensors dei corretti
+            corr_01 = (l2_dist <= thr_01).sum().item()
+            corr_05 = (l2_dist <= thr_05).sum().item()
+            corr_20 = (l2_dist <= thr_20).sum().item()
+
+            # --- AGGIORNAMENTO GLOBALE (Per Keypoint) ---
+            correct_010_global += corr_01
+            correct_005_global += corr_05
+            correct_020_global += corr_20
+            total_kps_global += n_kps
+
+            # --- AGGIORNAMENTO PER IMMAGINE (Per Image) ---
+            # Calcoliamo la % per questa specifica immagine e la aggiungiamo alla lista
+            pck_010_per_img.append(corr_01 / n_kps)
+            pck_005_per_img.append(corr_05 / n_kps)
+            pck_020_per_img.append(corr_20 / n_kps)
+
+            # --- AGGIORNAMENTO PER CATEGORIA ---
+            category_stats[category]['total'] += n_kps
+            category_stats[category]['c_10'] += corr_01
+            category_stats[category]['c_05'] += corr_05
+            category_stats[category]['c_20'] += corr_20
+
+        #PULIZIA MEMORIA
+        del src_img, trg_img, src_feats, trg_feats, pred_kps, l2_dist
+        
     if total_kps_global == 0:
         print("Nessun keypoint trovato nel dataset!")
         return
