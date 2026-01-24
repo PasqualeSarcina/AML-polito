@@ -8,16 +8,14 @@ from data.dataset_downloader import download_pfwillow
 
 
 class PFWillowDataset(CorrespondenceDataset):
-    def __init__(self, datatype: str, transform=None):
-        if datatype != 'test':
-            raise ValueError("PF-Willow dataset only supports 'test' datatype.")
-        super().__init__(dataset='pfwillow', datatype=datatype, transform=transform)
+    def __init__(self, transform=None):
+        super().__init__(dataset='pfwillow', datatype="test", transform=transform)
 
         self.pfwillow_dir = os.path.join(self.dataset_dir, 'pf-willow')
         if not os.path.exists(self.pfwillow_dir):
             download_pfwillow(self.dataset_dir)
 
-        pairs_csv = os.path.join(self.pfwillow_dir, f"{datatype}_pairs.csv")
+        pairs_csv = os.path.join(self.pfwillow_dir, "test_pairs.csv")
 
         with open(pairs_csv, newline="") as f:
             reader = csv.DictReader(f)
@@ -66,17 +64,9 @@ class PFWillowDataset(CorrespondenceDataset):
             raise ValueError("PF-Willow requires the category to build the image path.")
         return os.path.join(self.pfwillow_dir, "PF-dataset", category, imname)
 
-    def iter_test_distinct_images(self):
-        if self.datatype != 'test':
-            raise ValueError("Distinct images are available only for test set.")
+    def get_categories(self) -> set:
+        categories = set()
         for line in self.ann_files:
             category = line['imageA'].split('/')[1]
-            src = line['imageA'].split('/')[-1]
-            trg = line['imageB'].split('/')[-1]
-            self.distinct_images[category].add(src)
-            self.distinct_images[category].add(trg)
-
-        for img_name in self.distinct_images['all']:
-            img_tensor = self._get_image(img_name, category=category)
-            img_size = img_tensor.size()
-            yield img_name, img_tensor, img_size
+            categories.add(category)
+        return categories

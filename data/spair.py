@@ -1,4 +1,6 @@
 import json
+from typing import Literal
+
 from data.dataset import CorrespondenceDataset
 import os
 
@@ -6,7 +8,7 @@ from data.dataset_downloader import download_spair
 
 
 class SPairDataset(CorrespondenceDataset):
-    def __init__(self, dataset_size: str, datatype: str, transform = None):
+    def __init__(self, dataset_size: str, datatype: Literal["train", "test", "val"], transform = None):
         super().__init__(dataset='spair', datatype=datatype, transform=transform)
 
         self.spair_dir = os.path.join(self.dataset_dir, 'SPair-71k')
@@ -18,7 +20,6 @@ class SPairDataset(CorrespondenceDataset):
             os.path.join(self.spair_dir, 'Layout', dataset_size, self.datatype + '.txt'),
             "r").read().split('\n')
         self.ann_files = self.ann_files[:len(self.ann_files) - 1]
-
 
     def _load_annotation(self, idx):
         r""" Loads the annotation of the pair with index idx """
@@ -36,19 +37,10 @@ class SPairDataset(CorrespondenceDataset):
             raise ValueError("SPair requires the category to build the image path.")
         return os.path.join(self.spair_dir, "JPEGImages", category, imname)
 
-    def iter_test_distinct_images(self):
-        if self.datatype != 'test':
-            raise ValueError("Distinct images are available only for test set.")
+    def get_categories(self) -> set:
+        categories = set()
         for line in self.ann_files:
-            files, category = line.split(":")
-            _, src, trg, *_ = files.split("-")
-            self.distinct_images[category].add(src)
-            self.distinct_images[category].add(trg)
-
-        for category, img_set in self.distinct_images.items():
-            for img_name in img_set:
-                img_tensor = self._get_image(img_name + ".jpg", category=category)
-                img_size = img_tensor.size()
-                yield img_name, img_tensor, img_size
+            categories.add(line.split(":")[1])
+        return categories
 
 

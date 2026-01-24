@@ -1,4 +1,5 @@
 import csv
+from typing import Literal
 
 import scipy.io as sio
 import os
@@ -9,7 +10,7 @@ from data.dataset_downloader import download_pfpascal
 
 
 class PFPascalDataset(CorrespondenceDataset):
-    def __init__(self, datatype: str, transform = None):
+    def __init__(self, datatype: Literal["train", "test", "val"], transform = None):
         super().__init__(dataset='pfpascal', datatype=datatype, transform=transform)
 
         self.pfpascal_dir = os.path.join(self.dataset_dir, 'pf-pascal')
@@ -93,17 +94,6 @@ class PFPascalDataset(CorrespondenceDataset):
     def _build_image_path(self, imname, category=None):
         return os.path.join(self.pfpascal_dir, "PF-dataset-PASCAL", "JPEGImages", imname)
 
-    def iter_test_distinct_images(self):
-        if self.datatype != 'test':
-            raise ValueError("Distinct images are available only for test set.")
-        for line in self.ann_files:
-            src_imname = line["source_image"].split('/')[-1]
-            trg_imname = line["target_image"].split('/')[-1]
-            self.distinct_images['all'].add(src_imname)
-            self.distinct_images['all'].add(trg_imname)
-
-        for img_name in self.distinct_images['all']:
-            img_tensor = self._get_image(img_name)
-            img_size = img_tensor.size()
-            yield img_name, img_tensor, img_size
+    def get_categories(self) -> set:
+        return set(self.categories)
 

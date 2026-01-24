@@ -2,6 +2,7 @@ import json
 import math
 import os
 import random
+from typing import Literal
 
 import numpy as np
 import itertools
@@ -11,7 +12,7 @@ from data.dataset_downloader import download_ap10k
 
 
 class AP10KDataset(CorrespondenceDataset):
-    def __init__(self, datatype: str, transform=None, min_kps=3):
+    def __init__(self, datatype: Literal["train", "test", "val"], transform=None, min_kps=3):
         super().__init__(dataset='ap10k', datatype=datatype, transform=transform)
 
         self.ap10kdir = os.path.join(self.dataset_dir, 'ap-10k')
@@ -180,7 +181,8 @@ class AP10KDataset(CorrespondenceDataset):
             f,
             all_annotated_images,
             min_kps=3,
-            n_multiplier=1,
+            n_multiplier=7,
+            max_categories=7,
             seed=42
     ):
         by_species = {}
@@ -189,6 +191,12 @@ class AP10KDataset(CorrespondenceDataset):
 
         rng = random.Random(seed)
         total_written = 0
+
+        species = list(by_species.keys())
+        rng.shuffle(species)
+
+        keep = set(species[:max_categories])
+        by_species = {k: v for k, v in by_species.items() if k in keep}
 
         for species in sorted(by_species.keys()):
             recs = by_species[species]
@@ -231,27 +239,71 @@ class AP10KDataset(CorrespondenceDataset):
             f,
             all_annotated_images,
             min_kps=3,
-            n_pairs_per_combination=50,
-            seed=42
+            n_pairs_per_combination=250,
+            seed=42,
+            max_families=3,
+            max_species_per_family=4
     ):
         rng = random.Random(seed)
         total_written = 0
 
+        # fam -> spec -> list[rec]
         fam_spec = {}
         for rec in all_annotated_images.values():
             fam = rec["supercategory"]
             spec = rec["category"]
             fam_spec.setdefault(fam, {}).setdefault(spec, []).append(rec)
 
-        # ordine: supercategory
+        # -----------------------------
+        # SELEZIONE "STRICT" MA CON FALLBACK (NO LOOP INFINITO):
+        # - prova famiglie alternative finché possibile
+        # - errore SOLO se è IMPOSSIBILE soddisfare i numeri richiesti
+        # -----------------------------
+        if max_families is None or max_families <= 0:
+            raise ValueError("[CROSS-SPECIES] max_families deve essere un intero > 0")
+
+        if max_species_per_family is None or max_species_per_family <= 0:
+            raise ValueError("[CROSS-SPECIES] max_species_per_family deve essere un intero > 0")
+
+        # cross-species richiede almeno 2 specie per famiglia
+        if max_species_per_family < 2:
+            raise ValueError(
+                "[CROSS-SPECIES] max_species_per_family deve essere >= 2 (cross-species richiede >=2 specie).")
+
+        # famiglie eleggibili: hanno abbastanza specie per prenderne ESATTAMENTE max_species_per_family
+        eligible_fams = [
+            fam for fam, spec_map in fam_spec.items()
+            if len(spec_map) >= max_species_per_family
+        ]
+
+        # Se non ci sono abbastanza famiglie eleggibili, è IMPOSSIBILE rispettare i requisiti
+        if len(eligible_fams) < max_families:
+            raise ValueError(
+                f"[CROSS-SPECIES] Impossibile selezionare {max_families} famiglie con almeno "
+                f"{max_species_per_family} specie ciascuna. Disponibili: {len(eligible_fams)}."
+            )
+
+        # scegli ESATTAMENTE max_families famiglie (riproducibile)
+        selected_fams = rng.sample(eligible_fams, k=max_families)
+
+        # per ciascuna famiglia scegli ESATTAMENTE max_species_per_family specie (riproducibile)
+        new_fam_spec = {}
+        for fam in selected_fams:
+            spec_map = fam_spec[fam]
+            species = list(spec_map.keys())
+            chosen_species = rng.sample(species, k=max_species_per_family)
+            new_fam_spec[fam] = {sp: spec_map[sp] for sp in chosen_species}
+
+        fam_spec = new_fam_spec
+
+        # -----------------------------
+        # GENERAZIONE PAIRS (come il tuo codice)
+        # -----------------------------
         for fam in sorted(fam_spec.keys()):
             spec_map = fam_spec[fam]
-            specs = sorted(spec_map.keys())  # ordine: cat_a, cat_b
+            specs = sorted(spec_map.keys())
 
-            if len(specs) <= 1:
-                continue
-
-            # ordine: cat_a-cat_b
+            # tutte le combinazioni di specie nella famiglia scelta
             for cat_a, cat_b in itertools.combinations(specs, 2):
                 A = spec_map[cat_a]
                 B = spec_map[cat_b]
@@ -259,12 +311,11 @@ class AP10KDataset(CorrespondenceDataset):
                 cat_label = f"{fam}<{cat_a}-{cat_b}>"
 
                 possible = []
-                # direzione FISSA: a da cat_a (src), b da cat_b (trg)
+                # direzione fissa: src da cat_a, trg da cat_b
                 for a, b in itertools.product(A, B):
                     src_kps, trg_kps = AP10KDataset._match_keypoints(a, b)
                     if len(src_kps) < min_kps:
                         continue
-
                     possible.append((a, b, src_kps, trg_kps))
 
                 N = min(n_pairs_per_combination, len(possible))
@@ -294,8 +345,9 @@ class AP10KDataset(CorrespondenceDataset):
             f,
             all_annotated_images,
             min_kps=3,
-            n_pairs_per_combination=20,
-            seed=42
+            n_pairs_per_combination=400,
+            seed=42,
+            max_families=5
     ):
         rng = random.Random(seed)
         total_written = 0
@@ -307,6 +359,9 @@ class AP10KDataset(CorrespondenceDataset):
 
         # ORDINE: supercategory
         families = sorted(by_family.keys())
+        rng.shuffle(families)
+        families = families[:max_families]
+        by_family = {fam: by_family[fam] for fam in families}
 
         # coppie di famiglie ordinate (fam1 < fam2)
         for fam1, fam2 in itertools.combinations(families, 2):
@@ -350,17 +405,9 @@ class AP10KDataset(CorrespondenceDataset):
 
         print(f"[CROSS-FAMILY] Total pairs: {total_written}")
 
-    def iter_test_distinct_images(self):
-        if self.datatype != 'test':
-            raise ValueError("Distinct images are available only for test set.")
+    def get_categories(self) -> set:
+        categories = set()
         for line in self.ann_files:
-            rec = json.loads(line)
-            src_imname = rec["src_imname"]
-            trg_imname = rec["trg_imname"]
-            self.distinct_images['all'].add(src_imname)
-            self.distinct_images['all'].add(trg_imname)
-
-        for img_name in self.distinct_images['all']:
-            img_tensor = self._get_image(img_name)
-            img_size = img_tensor.size()
-            yield img_name, img_tensor, img_size
+            ann = json.loads(line)
+            categories.add(ann['category'])
+        return categories
