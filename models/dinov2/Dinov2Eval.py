@@ -55,8 +55,8 @@ class Dinov2Eval:
         if self.dataset_name == "ap-10k":
             category = "all"
         if img_name in self.processed_img[category]:
-            dict_out = load_featuremap(img_name, self.feat_dir, device=self.device)
-            return dict_out
+            featmap = load_featuremap(img_name, self.feat_dir, device=self.device)
+            return featmap
 
         dict_out = self.model.forward_features(img_tensor.to(self.device).unsqueeze(0))
         featmap = dict_out["x_norm_patchtokens"]
