@@ -171,6 +171,15 @@ if __name__ == "__main__":
     #LOAD MODEL
     base_ckpt = download_sam_model(checkpoint_dir)
     sam = sam_model_registry["vit_b"](checkpoint=base_ckpt)
+
+    # Caricamento pesi custom se esistono
+    tuned_path = os.path.join(checkpoint_dir, model_name)
+    if os.path.exists(tuned_path):
+        print(f"Caricamento pesi custom: {tuned_path}")
+        sam.load_state_dict(torch.load(tuned_path, map_location=device), strict=True)
+    else:
+        print(f"❌ ERRORE: Il file {tuned_path} non esiste.")
+
     sam.to(device)
     
     # VALUTAZIONE

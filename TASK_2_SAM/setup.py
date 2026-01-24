@@ -69,7 +69,7 @@ class MyCrossEntropyLoss(nn.Module):
         target_indices = (fy_trg * W) + fx_trg # [B, K]
 
         # 6. Calcolo Loss e Mascheramento
-        loss = self.ce_loss(logits.flatten(0, 1), target_indices.flatten()) # [B*K]
+        loss = self.criterion(logits.flatten(0, 1), target_indices.flatten()) # [B*K]
         loss = loss.view(B, K)
         
         # Media pesata solo sui keypoint validi
