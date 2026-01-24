@@ -29,29 +29,7 @@ def seed_everything(seed=42):
     torch.backends.cudnn.benchmark = False 
     print(f">>> 🔒 SEED FISSATO A {seed} <<<")
 
-dataset_root = 'dataset/SPair-71k'
-pair_ann_path = os.path.join(dataset_root, 'PairAnnotation')
-layout_path = os.path.join(dataset_root, 'Layout')
-image_path = os.path.join(dataset_root, 'JPEGImages')
-checkpoint_dir = 'checkpoints'
 
-train_dataset = SPairDataset(
-    pair_ann_path, layout_path, image_path,
-    dataset_size='large', pck_alpha=0.1, datatype='trn')
-
-train_dataloader = DataLoader(
-    train_dataset, batch_size=1, shuffle=True, 
-    num_workers=4, persistent_workers=True, pin_memory=True)
-
-print(f"Dataset Training caricato: {len(train_dataset)} coppie.")
-
-val_dataset = SPairDataset(
-    pair_ann_path, layout_path, image_path,
-    dataset_size='large', pck_alpha=0.1, datatype='val')
-
-val_dataloader = DataLoader(
-    val_dataset, batch_size=1, shuffle=False,
-    num_workers=4, persistent_workers=True, pin_memory=True)
     
 def seed_everything(seed=42):
     random.seed(seed)
@@ -65,8 +43,33 @@ def seed_everything(seed=42):
     print(f">>> 🔒 SEED FISSATO A {seed} <<<")
 
 def fine_tuning_loRA(epochs, lr, w_decay):
-    save_dir = 'checkpoints/LoRA_finetuned'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    dataset_root = 'dataset/SPair-71k'
+    pair_ann_path = os.path.join(dataset_root, 'PairAnnotation')
+    layout_path = os.path.join(dataset_root, 'Layout')
+    image_path = os.path.join(dataset_root, 'JPEGImages')
+    checkpoint_dir = 'checkpoints'
+
+    train_dataset = SPairDataset(
+        pair_ann_path, layout_path, image_path,
+        dataset_size='small', pck_alpha=0.1, datatype='trn')
+
+    train_dataloader = DataLoader(
+        train_dataset, batch_size=1, shuffle=True, 
+        num_workers=4, persistent_workers=True, pin_memory=True)
+
+    print(f"Dataset Training caricato: {len(train_dataset)} coppie.")
+
+    val_dataset = SPairDataset(
+        pair_ann_path, layout_path, image_path,
+        dataset_size='small', pck_alpha=0.1, datatype='val')
+
+    val_dataloader = DataLoader(
+        val_dataset, batch_size=1, shuffle=False,
+        num_workers=4, persistent_workers=True, pin_memory=True)
+    
+    save_dir = 'checkpoints/LoRA_finetuned'
     ckpt_path = download_sam_model(checkpoint_dir)
     sam = sam_model_registry["vit_b"](checkpoint=ckpt_path)
    
