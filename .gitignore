@@ -5,11 +5,11 @@ dataset/*
 *.tar.gz
 
 # Ignore model checkpoints
-task2_dinov2/checkpoints/
+models/dinov2/task2_dinov2/checkpoints/
 *.pth
 
 # Ignore model checkpoints
-task4_dinov2/checkpoints/
+models/dinov2/task4_dinov2/checkpoints/
 *.pth
 
 # Byte-compiled / optimized / DLL files
