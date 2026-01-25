@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 import torch
+import copy
 
 
 DINOV3_REPO_URL = "https://github.com/facebookresearch/dinov3.git"
@@ -100,4 +100,6 @@ def load_dinov3_backbone(
         )
 
     return model
+
+
 
