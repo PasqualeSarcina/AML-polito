@@ -37,7 +37,14 @@ default weights, run:
 python eval.py dinov2
 ```
 By default, the script evaluates on the SPair-71k dataset using pre-trained weights.
-You can specify different datasets and model checkpoints using command-line arguments. Use the `--help` flag to see all.
+You can specify different datasets and model checkpoints using the command-line arguments `--dataset`.
+For example, to evaluate on the PF-PASCAL dataset with custom weights, run:
+
+```bash
+python eval.py --dataset pf-pascal sam --custom-weights path/to/custom_weights.pth
+```
+
+Use the `--help` flag to see all.
 
 The supported models options are: `dinov2`, `dinov3`, `sam`, `dift`.
 
