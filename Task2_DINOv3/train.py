@@ -105,7 +105,7 @@ def finetune_screening(
             out_size=512,
             patch_size=16,
             n_layers_feats=N_LAYERS_FEATS,
-            max_train_batches=50,
+            max_train_batches=None,
         )
 
         val_res = validate_one_epoch(
@@ -115,8 +115,8 @@ def finetune_screening(
             out_size=512,
             patch_size=16,
             n_layers_feats=N_LAYERS_FEATS,
-            max_val_batches=50,
-            max_pck_pairs_val=100,
+            max_val_batches=None,
+            max_pck_pairs_val=None,
         )
 
         scheduler.step(float(val_res["val_loss"]))
