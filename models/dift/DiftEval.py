@@ -152,6 +152,9 @@ class DiftEval:
 
                 src_ft, trg_ft, _ = self._compute_pca(src_ft, trg_ft)
 
+                src_ft = F.normalize(src_ft, p=2, dim=1, eps=1e-6)
+                trg_ft = F.normalize(trg_ft, p=2, dim=1, eps=1e-6)
+
                 # keypoints già nello spazio 768×768
                 src_kps = batch["src_kps"].to(self.device)  # (N,2) in 768
                 trg_kps = batch["trg_kps"].to(self.device)  # (N,2) in 768
