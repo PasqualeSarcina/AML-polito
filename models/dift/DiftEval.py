@@ -1,11 +1,9 @@
-import gc
 import math
 from collections import defaultdict
 from pathlib import Path
 from typing import List
 
 import torch
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 import torch.nn.functional as F
 
@@ -45,17 +43,38 @@ class DiftEval:
         categories = self.dataset.get_categories()
         self.prompt_embeds = self.featurizer.encode_category_prompts(categories)
 
-    def compute_features(self, img_tensor: torch.Tensor, img_name: str,
-                          category: str, up_ft_index: list[int] | int = 1, t:int = 261) -> torch.Tensor:
+    def compute_features(
+        self,
+        img_tensor: torch.Tensor,
+        img_name: str,
+        category: str,
+        up_ft_index: list[int] | int = 1,
+        t: int = 261
+    ) -> torch.Tensor:
+        """
+        Estrae feature UNet per un SOLO timestep t, ma può estrarre più blocchi insieme
+        se up_ft_index è una lista.
+
+        IMPORTANTE: la cache deve includere t e up_ft_index, altrimenti ricicli feature sbagliate.
+        """
         if self.dataset_name == "ap-10k":
             category_opt = "all"
         else:
             category_opt = category
-        if img_name in self.processed_img[category_opt]:
-            unet_ft = load_featuremap(img_name, self.feat_dir, self.device)
-            return unet_ft
 
-        prompt_embed = self.prompt_embeds[category_opt]  # (1,77,dim)
+        prompt_embed = self.prompt_embeds[category_opt]
+
+        # ---- chiave cache unica (include t e blocchi) ----
+        if isinstance(up_ft_index, list):
+            up_str = "-".join(map(str, up_ft_index))
+        else:
+            up_str = str(up_ft_index)
+
+        feat_key = f"{img_name}_t{t}_up{up_str}"
+
+        if feat_key in self.processed_img[category_opt]:
+            unet_ft = load_featuremap(feat_key, self.feat_dir, self.device)
+            return unet_ft
 
         unet_ft = self.featurizer.forward(
             img_tensor=img_tensor,
@@ -63,9 +82,10 @@ class DiftEval:
             ensemble_size=self.enseble_size,
             up_ft_index=up_ft_index,
             t=t
-        )  # (1,c,h,w)
-        save_featuremap(unet_ft, img_name, self.feat_dir)
-        self.processed_img[category_opt].add(img_name)
+        )
+
+        save_featuremap(unet_ft, feat_key, self.feat_dir)
+        self.processed_img[category_opt].add(feat_key)
         return unet_ft
 
     def _compute_pca(self, sd_src_featmap, sd_trg_featmap):
@@ -73,10 +93,14 @@ class DiftEval:
         co-PCA su 3 scale (s5,s4,s3) e costruzione feature map ridotte:
           - input: liste/tuple di 3 tensori (s5,s4,s3), ciascuno [C,H,W] o [1,C,H,W]
           - output: src_proc, trg_proc: [1, Dsd, Hc, Wc]  (Hc,Wc = self.featmap_size)
-                  dims_used: [d_s5, d_s4, d_s3]
+                    dims_used: [d_s5, d_s4, d_s3]
+
+        Modifica importante per cosine+argmax:
+        - normalizzazione per-blocco (scala) + peso per-blocco prima della concat
+          così il peso del layer di mezzo resta “significativo”.
         """
-        PCA_DIMS = [256, 512, 256]  # s5,s4,s3
-        WEIGHT = [1, 1, 1]
+        PCA_DIMS = [256, 512, 256]      # s5,s4,s3
+        LAYER_W  = [1.0, 2.0, 1.0]      # più importanza al layer di mezzo (s4)
 
         dims_used = []
         src_red_list = []
@@ -104,25 +128,28 @@ class DiftEval:
             q = min(out_dim, C)
             dims_used.append(q)
 
-            fs_tok = fs.permute(0, 2, 3, 1).reshape(P, C)
-            ft_tok = ft.permute(0, 2, 3, 1).reshape(P, C)
+            fs_tok = fs.permute(0, 2, 3, 1).reshape(P, C)  # [P,C]
+            ft_tok = ft.permute(0, 2, 3, 1).reshape(P, C)  # [P,C]
 
-            X = torch.cat([fs_tok, ft_tok], dim=0)  # [2P,C]
+            X = torch.cat([fs_tok, ft_tok], dim=0)         # [2P,C]
             mean = X.mean(dim=0, keepdim=True)
             Xc = (X - mean).float()
 
-            _, _, V = torch.pca_lowrank(Xc, q=q)  # V: [C,q]
-            Z = Xc @ V  # [2P,q]
+            _, _, V = torch.pca_lowrank(Xc, q=q)           # V: [C,q]
+            Z = Xc @ V                                     # [2P,q]
 
             Zs = Z[:P, :]
             Zt = Z[P:, :]
 
-            fs_red = Zs.reshape(1, H, W, q).permute(0, 3, 1, 2).contiguous()
-            ft_red = Zt.reshape(1, H, W, q).permute(0, 3, 1, 2).contiguous()
+            fs_red = Zs.reshape(1, H, W, q).permute(0, 3, 1, 2).contiguous()  # [1,q,H,W]
+            ft_red = Zt.reshape(1, H, W, q).permute(0, 3, 1, 2).contiguous()  # [1,q,H,W]
 
-            # pesi per scala (sul blocco canali di quella scala)
-            fs_red *= WEIGHT[i]
-            ft_red *= WEIGHT[i]
+            # ---- block-normalize (per pixel) + peso scala ----
+            fs_red = F.normalize(fs_red, p=2, dim=1, eps=1e-6)
+            ft_red = F.normalize(ft_red, p=2, dim=1, eps=1e-6)
+
+            fs_red = fs_red * LAYER_W[i]
+            ft_red = ft_red * LAYER_W[i]
 
             src_red_list.append(fs_red)
             trg_red_list.append(ft_red)
@@ -132,13 +159,17 @@ class DiftEval:
 
         return src_proc, trg_proc, dims_used
 
-    def evaluate(self) -> list[CorrespondenceResult]:
+    def evaluate(self) -> list["CorrespondenceResult"]:
         results = []
 
         # input DIFT (dopo preprocess) e grid feature
         OUT_H = OUT_W = 768
         HV = WV = 48
-        PATCH = OUT_W // WV   # 768/48 = 16  (patch stride effettivo)
+        PATCH = OUT_W // WV   # 768/48 = 16
+
+        # ---- multi-timestep fusion (senza toccare forward) ----
+        T_LIST = [10, 51, 261]
+        T_W    = [0.2, 0.4, 0.4]   # più peso a mid e mid-high
 
         with torch.no_grad():
             for batch in tqdm(self.dataloader, total=len(self.dataloader),
@@ -146,20 +177,34 @@ class DiftEval:
 
                 category = batch["category"]
 
-                # features: [1,C,48,48]
-                src_ft = self.compute_features(batch["src_img"], batch["src_imname"], category, up_ft_index=[0, 1, 2], t=100)
-                trg_ft = self.compute_features(batch["trg_img"], batch["trg_imname"], category, up_ft_index=[0, 1, 2], t=100)
+                # === 1) Estrai features per ogni timestep ===
+                src_list = []
+                trg_list = []
 
-                src_ft, trg_ft, _ = self._compute_pca(src_ft, trg_ft)
+                for t in T_LIST:
+                    src_ft_t = self.compute_features(
+                        batch["src_img"], batch["src_imname"], category,
+                        up_ft_index=[0, 1, 2], t=t
+                    )
+                    trg_ft_t = self.compute_features(
+                        batch["trg_img"], batch["trg_imname"], category,
+                        up_ft_index=[0, 1, 2], t=t
+                    )
 
-                src_ft = F.normalize(src_ft, p=2, dim=1, eps=1e-6)
-                trg_ft = F.normalize(trg_ft, p=2, dim=1, eps=1e-6)
+                    # co-PCA per questo timestep (include già multi-layer)
+                    src_p, trg_p, _ = self._compute_pca(src_ft_t, trg_ft_t)
+
+                    # opzionale: normalizzazione globale (ok, ma non indispensabile con cosine_similarity)
+                    src_p = F.normalize(src_p, p=2, dim=1, eps=1e-6)
+                    trg_p = F.normalize(trg_p, p=2, dim=1, eps=1e-6)
+
+                    src_list.append(src_p)
+                    trg_list.append(trg_p)
 
                 # keypoints già nello spazio 768×768
                 src_kps = batch["src_kps"].to(self.device)  # (N,2) in 768
                 trg_kps = batch["trg_kps"].to(self.device)  # (N,2) in 768
 
-                C = src_ft.shape[1]
                 distances_this_image: list[float] = []
 
                 n_kps = min(src_kps.shape[0], trg_kps.shape[0])
@@ -178,15 +223,20 @@ class DiftEval:
                         img_hw=(OUT_H, OUT_W)
                     )
 
-                    # ---- src feature vector ----
-                    src_vec = src_ft[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
+                    # === 2) Similarity fusion (somma pesata delle cosine-map) ===
+                    sim2d = 0.0
+                    for k, w in enumerate(T_W):
+                        src_ft = src_list[k]  # [1,C,48,48]
+                        trg_ft = trg_list[k]  # [1,C,48,48]
 
-                    # ---- similarity map in token space (48x48) ----
-                    sim2d = torch.nn.functional.cosine_similarity(trg_ft[0], src_vec, dim=0)  # [48,48]
+                        Ck = src_ft.shape[1]
+                        src_vec = src_ft[0, :, y_idx, x_idx].view(Ck, 1, 1)  # [C,1,1]
+
+                        sim_k = F.cosine_similarity(trg_ft[0], src_vec, dim=0)  # [48,48]
+                        sim2d = sim2d + w * sim_k
 
                     # ---- pred token coords (y,x) ----
                     if self.win_soft_argmax:
-                        # la tua soft_argmax_window ritorna (y,x)
                         y_tok, x_tok = soft_argmax_window(
                             sim2d,
                             window_radius=self.wsam_win_size,
