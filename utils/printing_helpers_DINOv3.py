@@ -1,6 +1,6 @@
-def print_report(report):
+def print_report(report, task):
     ts = report["thresholds"]
-    print("\n================ TASK 1 REPORT ================")
+    print("\n================ TASK {task} REPORT ================")
     print(f"Config: {report['name']}")
     print(f"Pairs evaluated: {report['pairs_evaluated']}")
     print(f"Valid keypoints: {report['valid_keypoints']}")

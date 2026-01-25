@@ -7,12 +7,12 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from models.model_DINOv3 import load_dinov3_backbone
-from dataset.dataset_DINOv3 import SPairDataset, collate_spair  
+from models.dinov3.model_DINOv3 import load_dinov3_backbone
+from dataset.dataset_DINOv3 import SPairDataset, collate_single  
 from utils.setup_data_DINOv3 import setup_data
 
 from utils.extraction_DINOv3 import extract_dense_features
-from utils.matching_DINOv3 import match_wsa_nearest_patch_masked
+from utils.matching_DINOv3 import match_wsa_nearest_patch_masked, match_argmax_nearest_patch_masked
 
 
 from utils.printing_helpers_DINOv3 import print_report, print_per_category
@@ -31,10 +31,17 @@ def evaluate_model(
     n_layers: int = 1,
     thresholds=(0.05, 0.10, 0.20),
     max_pairs: int | None = None,
+    verbose_every: int = 0,   # 0 = no periodic prints
+    use_wsa: bool = False,
     wsa_window: int = 5,
     wsa_temp: float = 0.1,
-    verbose_every: int = 0,   # 0 = no periodic prints
 ):
+    """
+    Returns a report dict consistent with Task1/Task2 printers:
+    - macro = per-pair mean (aka per-image mean)
+    - micro = per-keypoint global
+    """
+
     model.eval()
 
     # Robust patch size retrieval
@@ -43,7 +50,7 @@ def evaluate_model(
         patch = getattr(model, "patch_size", 16)
     patch = int(patch[0]) if isinstance(patch, (tuple, list)) else int(patch)
 
-    # Global accumulators
+    # Accumulators
     total_valid_kps = 0
     micro_correct = {t: 0 for t in thresholds}
     micro_total   = {t: 0 for t in thresholds}
@@ -60,124 +67,123 @@ def evaluate_model(
     t0 = time.time()
     pairs_seen = 0
 
-    # tqdm "total" should match what we actually iterate
-    total_bar = max_pairs if max_pairs is not None else len(loader)
+    # tqdm total: use max_pairs if provided; otherwise keep it unspecified
+    pbar_total = max_pairs if max_pairs is not None else None
+    pbar = tqdm(loader, total=pbar_total, desc=f"{name}", leave=True)
 
-    pbar = tqdm(loader, total=total_bar, desc=f"{name}", leave=True)
-
-    for i, batch in enumerate(pbar):
+    for i, sample in enumerate(pbar):
         if max_pairs is not None and pairs_seen >= max_pairs:
             break
 
-        # collate_spair returns a batch dict; with batch_size=1 many fields are length-1 lists/tensors.
-        # We normalize to "single sample" by indexing [0] where appropriate.
-        # Images: [B,3,H,W]
-        src_img = batch["src_img"].to(device)
-        trg_img = batch["trg_img"].to(device)
+        # NOTE: this assumes evaluation loader has batch_size=1
+        # (otherwise 'category' could be a list / unhashable).
+        cat = sample.get("category", "unknown")
+        pair_id = sample.get("pair_id", f"pair_{i}")
 
-        # Keypoints: usually [B,K,2]
-        src_kps = batch["src_kps"].to(device)
-        trg_kps = batch["trg_kps"].to(device)
+        src_img  = sample["src_img"].to(device)      # [C,H,W] or [1,C,H,W]
+        trg_img  = sample["trg_img"].to(device)
+        src_kps  = sample["src_kps"].to(device)      # [K,2]
+        trg_kps  = sample["trg_kps"].to(device)      # [K,2]
+        trg_bbox = sample["trg_bbox"].to(device)     # [4] xyxy in preprocess coords
 
-        # BBox: [B,4]
-        trg_bbox = batch["trg_bbox"].to(device)
+        # meta dicts stay on CPU
+        src_meta = sample["src_meta"]
+        trg_meta = sample["trg_meta"]
 
-        # Meta: list[dict] length B
-        src_meta = batch["src_meta"][0] if isinstance(batch["src_meta"], (list, tuple)) else batch["src_meta"]
-        trg_meta = batch["trg_meta"][0] if isinstance(batch["trg_meta"], (list, tuple)) else batch["trg_meta"]
+        # Ensure CHW for extractor
+        src_chw = src_img.squeeze(0) if src_img.ndim == 4 else src_img
+        trg_chw = trg_img.squeeze(0) if trg_img.ndim == 4 else trg_img
 
-        # Category: list[str] length B
-        cat = batch.get("category", "unknown")
-        if isinstance(cat, (list, tuple)):
-            cat = cat[0]
-        elif torch.is_tensor(cat):
-            # very rare; keep safe
-            cat = str(cat.item())
-
-        pair_id = batch.get("pair_id", f"pair_{i}")
-        if isinstance(pair_id, (list, tuple)):
-            pair_id = pair_id[0]
-
-        # Squeeze batch dimension (we expect B=1)
-        src_img = src_img.squeeze(0)  # [3,H,W]
-        trg_img = trg_img.squeeze(0)
-        src_kps = src_kps.squeeze(0)  # [K,2]
-        trg_kps = trg_kps.squeeze(0)
-        trg_bbox = trg_bbox.squeeze(0)  # [4]
-
-        out_size = int(src_img.shape[-1])  # square by construction
-
-        # --- Extract dense features (returns [1,C,Hf,Wf]) ---
-        src_feat = extract_dense_features(model, src_img, n_layers=n_layers, return_grid=False)
-        trg_feat = extract_dense_features(model, trg_img, n_layers=n_layers, return_grid=False)
-
-        # --- Predict with masked WSA matcher ---
-        pred_kps, valid_src_mask = match_wsa_nearest_patch_masked(
-            src_feat=src_feat,
-            trg_feat=trg_feat,
-            src_kps_xy=src_kps,
-            out_size=out_size,
-            patch=patch,
-            src_meta=src_meta,
-            trg_meta=trg_meta,
-            wsa_window=wsa_window,
-            wsa_temp=wsa_temp,
-        )
-
-        # --- Validity: GT in-bounds (both) + matcher-valid ---
+        out_size = int(src_chw.shape[-1])  # square
         img_w = out_size
         img_h = out_size
-        src_valid = (src_kps[:, 0] >= 0) & (src_kps[:, 1] >= 0) & (src_kps[:, 0] < img_w) & (src_kps[:, 1] < img_h)
-        trg_valid = (trg_kps[:, 0] >= 0) & (trg_kps[:, 1] >= 0) & (trg_kps[:, 0] < img_w) & (trg_kps[:, 1] < img_h)
-        valid = src_valid & trg_valid & valid_src_mask
 
-        if valid.sum().item() == 0:
+        # Keypoints valid in both images (in preprocess coords)
+        src_valid = (
+            (src_kps[:, 0] >= 0) & (src_kps[:, 1] >= 0) &
+            (src_kps[:, 0] < img_w) & (src_kps[:, 1] < img_h)
+        )
+        trg_valid = (
+            (trg_kps[:, 0] >= 0) & (trg_kps[:, 1] >= 0) &
+            (trg_kps[:, 0] < img_w) & (trg_kps[:, 1] < img_h)
+        )
+        valid = src_valid & trg_valid
+        if int(valid.sum().item()) == 0:
+            continue
+
+        # Extract dense features
+        src_feat = extract_dense_features(model, src_chw, n_layers=n_layers, return_grid=False)  # [1,C,Hf,Wf]
+        trg_feat = extract_dense_features(model, trg_chw, n_layers=n_layers, return_grid=False)
+
+        # Predict target keypoints
+        if use_wsa:
+            pred_kps, valid_src_mask = match_wsa_nearest_patch_masked(
+                src_feat=src_feat,
+                trg_feat=trg_feat,
+                src_kps_xy=src_kps,
+                out_size=out_size,
+                patch=patch,
+                src_meta=src_meta,
+                trg_meta=trg_meta,
+                wsa_window=wsa_window,
+                wsa_temp=wsa_temp,
+            )
+        else:
+            pred_kps, valid_src_mask = match_argmax_nearest_patch_masked(
+                src_feat=src_feat,
+                trg_feat=trg_feat,
+                src_kps_xy=src_kps,
+                out_size=out_size,
+                patch=patch,
+                src_meta=src_meta,
+                trg_meta=trg_meta,
+            )
+
+        # Score only keypoints valid in GT and matchable (e.g., not in padded area)
+        valid = valid & valid_src_mask
+        if int(valid.sum().item()) == 0:
             continue
 
         pairs_seen += 1
-        kv = int(valid.sum().item())
-        total_valid_kps += kv
-
+        total_valid_kps += int(valid.sum().item())
         pbar.set_postfix({"pairs": pairs_seen, "valid_kps": total_valid_kps})
 
-        # --- PCK normalization (target bbox, xyxy) ---
+        # PCK normalization (target bbox max side)
         w = (trg_bbox[2] - trg_bbox[0]).clamp(min=1.0)
         h = (trg_bbox[3] - trg_bbox[1]).clamp(min=1.0)
-        norm = float(torch.max(w, h).item())
+        norm = torch.max(w, h)
 
         # Distances for valid keypoints
         d = torch.norm(pred_kps[valid] - trg_kps[valid], dim=1)  # [Kv]
 
-        # Per-pair accuracies (macro = mean over pairs)
         for t in thresholds:
-            thr = t * norm
+            thr = float(t) * norm
             correct = (d <= thr).float()
-            pair_acc = float(correct.mean().item())
 
             c = int(correct.sum().item())
             n = int(correct.numel())
+            pair_acc = float(correct.mean().item())
 
-            # Global micro
             micro_correct[t] += c
             micro_total[t] += n
 
-            # Global macro
             macro_sum[t] += pair_acc
             macro_n[t] += 1
 
-            # Per-category micro
             cat_micro_correct[cat][t] += c
             cat_micro_total[cat][t] += n
-
-            # Per-category macro
             cat_macro_sum[cat][t] += pair_acc
             cat_macro_n[cat][t] += 1
 
         if verbose_every and (pairs_seen % verbose_every == 0):
             elapsed = time.time() - t0
-            print(f"[{name}] pairs={pairs_seen} valid_kps={total_valid_kps} elapsed={elapsed:.1f}s last_pair={pair_id}")
+            print(
+                f"[{name}] pairs={pairs_seen} valid_kps={total_valid_kps} "
+                f"elapsed={elapsed:.1f}s last_pair={pair_id} "
+                f"mode={'WSA' if use_wsa else 'ARGMAX'}"
+            )
 
-    # --- Build report dict (PCK values as fractions in [0,1]) ---
+    # Build report
     report = {
         "name": name,
         "n_layers": n_layers,
@@ -185,12 +191,14 @@ def evaluate_model(
         "valid_keypoints": total_valid_kps,
         "patch_size": patch,
         "thresholds": list(thresholds),
-        "wsa_window": int(wsa_window),
-        "wsa_temp": float(wsa_temp),
         "global_pck_micro": {},
         "global_pck_macro": {},
         "per_category": {},
+        "inference_mode": "WSA" if use_wsa else "ARGMAX",
     }
+    if use_wsa:
+        report["wsa_window"] = int(wsa_window)
+        report["wsa_temp"] = float(wsa_temp)
 
     for t in thresholds:
         report["global_pck_micro"][t] = (micro_correct[t] / micro_total[t]) if micro_total[t] > 0 else 0.0
@@ -201,17 +209,19 @@ def evaluate_model(
         entry = {
             "pck_micro": {},
             "pck_macro": {},
-            "pairs": int(cat_macro_n[cat][thresholds[0]]) if thresholds else 0,
-            "valid_kps": int(cat_micro_total[cat][thresholds[0]]) if thresholds else 0,
+            # these are essentially constant across thresholds; take max for safety
+            "pairs": int(max(cat_macro_n[cat].values()) if len(cat_macro_n[cat]) else 0),
+            "valid_kps": int(max(cat_micro_total[cat].values()) if len(cat_micro_total[cat]) else 0),
         }
         for t in thresholds:
             tot = cat_micro_total[cat][t]
             entry["pck_micro"][t] = (cat_micro_correct[cat][t] / tot) if tot > 0 else 0.0
-            n = cat_macro_n[cat][t]
-            entry["pck_macro"][t] = (cat_macro_sum[cat][t] / n) if n > 0 else 0.0
+            nn = cat_macro_n[cat][t]
+            entry["pck_macro"][t] = (cat_macro_sum[cat][t] / nn) if nn > 0 else 0.0
         report["per_category"][cat] = entry
 
     return report
+
 
 
 # -----------------------------
@@ -247,7 +257,7 @@ def main():
         batch_size=1,
         shuffle=False,
         num_workers=2,
-        collate_fn=collate_spair,
+        collate_fn=collate_single,
         pin_memory=True,
         persistent_workers=True,
         drop_last=False,
@@ -275,21 +285,36 @@ def main():
     wsa_window = 5
     wsa_temp = 0.1
 
-    for n_layers in (1, 2, 4):
-        report = evaluate_model(
-            name=f"DINOv3 Base Eval (n_layers={n_layers})",
-            model=model,
-            loader=test_loader,
-            device=device,
-            n_layers=n_layers,
-            max_pairs=None,
-            wsa_window=wsa_window,
-            wsa_temp=wsa_temp,
-        )
-        print_report(report)
-        print_per_category(report)
+    
+    model.eval()
 
-    print("\n--- Evaluation Complete ---")
+    r_base_argmax = evaluate_model(
+        name="Task3_Base_Argmax",
+        model=model,
+        loader=test_loader,
+        device=device,
+        n_layers=1,
+        thresholds=(0.05, 0.10, 0.20),
+        max_pairs=None,
+        use_wsa=False,
+    )
+    print_report(r_base_argmax, task=3)
+    print_per_category(r_base_argmax)
+
+    r_base_wsa = evaluate_model(
+        name=f"Task3_Base_WSA_w{wsa_window}_t{wsa_temp}",
+        model=model,
+        loader=test_loader,
+        device=device,
+        n_layers=1,
+        thresholds=(0.05, 0.10, 0.20),
+        max_pairs=None,
+        use_wsa=True,
+        wsa_window=wsa_window,
+        wsa_temp=wsa_temp,
+    )
+    print_report(r_base_wsa, task=3)
+    print_per_category(r_base_wsa)
 
 
 if __name__ == "__main__":

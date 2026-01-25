@@ -6,7 +6,7 @@ import time
 from collections import defaultdict
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from models.model_DINOv3 import load_dinov3_backbone
+from models.dinov3.model_DINOv3 import load_dinov3_backbone
 from dataset.dataset_DINOv3 import SPairDataset, collate_single
 from utils.extraction_DINOv3 import extract_dense_features
 from utils.matching_DINOv3 import grid_valid_mask_from_meta, _kps_valid_mask, match_argmax_nearest_patch_masked
@@ -258,7 +258,7 @@ if __name__ == "__main__":
         n_layers=1,
     )
 
-    print_report(report_LastLayer)
+    print_report(report_LastLayer, 1)
     print_per_category(report_LastLayer)
 
     reportLast2Layers = evaluate_model(
@@ -270,7 +270,7 @@ if __name__ == "__main__":
         n_layers=2,
     )
 
-    print_report(reportLast2Layers)
+    print_report(reportLast2Layers, 1)
     print_per_category(reportLast2Layers)
 
     reportLast4Layers = evaluate_model(
@@ -282,7 +282,7 @@ if __name__ == "__main__":
         n_layers=4,
     )
 
-    print_report(reportLast4Layers)
+    print_report(reportLast4Layers, 1)
     print_per_category(reportLast4Layers)
 
     print("\n--- Evaluation Complete ---")

@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from dataset.dataset_DINOv3 import SPairDataset, collate_spair
-from models.model_DINOv3 import load_dinov3_backbone
+from models.dinov3.model_DINOv3 import load_dinov3_backbone
 from Task2_DINOv3.prepare_train import (
     prepare_model_for_fine_tuning,
     train_one_epoch,
