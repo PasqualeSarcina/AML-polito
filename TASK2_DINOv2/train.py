@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from data.task2_DINOv2_dataset import SPairDataset
+from data.task3_DINOv2_dataset import SPairDataset
 from utils.setup_data import setup_data
 from task2_dinov2.loss import InfoNCELoss
 
@@ -36,7 +36,7 @@ val_dataset = SPairDataset(
 
 trn_dataloader = DataLoader(
     train_dataset, 
-    batch_size=5, 
+    batch_size=1, 
     shuffle=True, 
     num_workers=4,           
     persistent_workers=True, 
@@ -45,7 +45,7 @@ trn_dataloader = DataLoader(
 
 val_dataloader = DataLoader(
     val_dataset, 
-    batch_size=5, 
+    batch_size=1, 
     shuffle=False, 
     num_workers=4,           
     persistent_workers=True, 
@@ -75,12 +75,9 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
     for param in model.parameters(): param.requires_grad = False
     for block in model.blocks[-n_layers:]:
         for param in block.parameters(): param.requires_grad = True
-    
-    # Also unfreeze the final normalization layer
+
     for param in model.norm.parameters(): param.requires_grad = True
 
-    #optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), 
-                            #lr=lr, weight_decay=w_decay)
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), 
                             lr=lr, weight_decay=w_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
@@ -88,11 +85,14 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
     scaler = torch.amp.GradScaler('cuda')
     num_epochs = epochs
     best_val_loss=float('inf')
+    accumulation_steps = 8  # Simulate batch_size = 8
+
     for epoch in range(num_epochs):
         model.train()
         total_epoch_loss = 0
         pbar = tqdm(trn_dataloader, desc=f"Epoch {epoch+1}/{num_epochs}[Training]")
-        
+        optimizer.zero_grad()
+
         for i, batch in enumerate(pbar):
             
             # 2. Training Logic (INDENTED INSIDE THE LOOP)
@@ -102,7 +102,6 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
             trg_kps = batch['trg_kps'].to(device)
             mask    = batch['valid_mask'].to(device)
             
-            optimizer.zero_grad()
 
             with torch.amp.autocast('cuda'):
                 output_src = model.forward_features(src_img)
@@ -117,13 +116,15 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
                 feat_trg = feat_trg.permute(0, 2, 1).reshape(B, C, H, W)
 
                 loss = criterion(feat_src, feat_trg, src_kps, trg_kps, mask)
-
+                loss = loss / accumulation_steps
             scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            if (i + 1) % accumulation_steps == 0 or (i + 1) == len(trn_dataloader):
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
             
-            total_epoch_loss += loss.item()
-            pbar.set_postfix({'loss': loss.item()})
+            total_epoch_loss += loss.item() * accumulation_steps
+            pbar.set_postfix({'loss': loss.item() * accumulation_steps})
     
         avg_train_loss = total_epoch_loss / len(trn_dataloader)
         print(f"Epoch [{epoch+1}/{num_epochs}] Avg Training Loss: {avg_train_loss:.4f}")
