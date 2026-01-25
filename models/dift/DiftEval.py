@@ -75,7 +75,7 @@ class DiftEval:
           - output: src_proc, trg_proc: [1, Dsd, Hc, Wc]  (Hc,Wc = self.featmap_size)
                   dims_used: [d_s5, d_s4, d_s3]
         """
-        PCA_DIMS = [256, 256, 256]  # s5,s4,s3
+        PCA_DIMS = [256, 512, 256]  # s5,s4,s3
         WEIGHT = [1, 1, 1]
 
         dims_used = []
