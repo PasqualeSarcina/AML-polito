@@ -19,7 +19,7 @@ from Task2_DINOv3.prepare_train import (
     PATH_CHECKPOINTS,  # IMPORTANT: single source of truth
 )
 from utils.setup_data_DINOv3 import setup_data
-from Task2_DINOv3.loss_DINOv3 import GaussianCrossEntropyLoss
+from Task2_DINOv3.loss_DINOv3 import InfoNCEPatchClassifyLoss
 
 
 def seed_everything(seed=42):
@@ -65,16 +65,7 @@ def finetune_screening(
     model.to(device)
     freeze_all(model)
 
-    loss_fn = GaussianCrossEntropyLoss(
-        out_size=512,
-        patch_size=16,
-        temperature=0.2,
-        sigma=1.0,
-        window=7,
-        use_windowed=True,
-        enable_l2_norm=True,
-    )
-
+    loss_fn = InfoNCEPatchClassifyLoss(out_size=512, patch_size=16, temperature=0.07)
     
     prepare_model_for_fine_tuning(
         model,
@@ -83,12 +74,13 @@ def finetune_screening(
     )
 
     optimizer = torch.optim.AdamW(
-            (p for p in model.parameters() if p.requires_grad),
-            lr=1e-3,
-            weight_decay=1e-2,
-        )
+        (p for p in model.parameters() if p.requires_grad),
+        lr=lr,
+        weight_decay=weight_decay,
+    )
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+
+    scheduler = CosineAnnealingLR(
         optimizer, T_max=epochs, eta_min=1e-6
     )
 
@@ -147,7 +139,7 @@ def finetune_screening(
                     "epochs": epochs,
                     "lr": current_lr,
                     "sigma": 1.0,
-                    "temperature": 0.2,
+                    "temperature": 0.7,
                     "weight_decay": weight_decay,
                     "n_layer": n_layer,
                     "out_size": 512,
@@ -161,7 +153,6 @@ def finetune_screening(
         best_ckpt_path = None
 
     return FinetuneScreeningResult(layer_name, best_epoch, best_val_loss, history, best_ckpt_path)
-
 # -----------------------------
 # Main
 # -----------------------------
@@ -203,16 +194,16 @@ def main():
     best_tag = ""
 
     r = finetune_screening(
-        model,
-        pretrained_state,
-        loader_train,
-        loader_val,
-        device,
-        epochs=5,
-        lr=1e-3,
-        weight_decay=1e-2,
-        n_layer=1,
-    )
+            model,
+            pretrained_state,
+            loader_train,
+            loader_val,
+            device,
+            epochs=2,
+            lr=1e-3,
+            weight_decay=1e-2,
+            n_layer=1,
+        )
 
     if r.best_val_loss < best_val_loss:
         best_val_loss = r.best_val_loss

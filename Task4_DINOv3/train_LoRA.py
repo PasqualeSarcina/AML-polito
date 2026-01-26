@@ -7,7 +7,7 @@ from copy import deepcopy
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from dataset.dataset_DINOv3 import SPairDataset, collate_spair
 from models.dinov3.model_DINOv3 import load_dinov3_backbone
@@ -16,7 +16,7 @@ from Task2_DINOv3.prepare_train import (
     validate_one_epoch,
 )
 from utils.setup_data_DINOv3 import setup_data
-from Task2_DINOv3.loss_DINOv3 import GaussianCrossEntropyLoss
+from Task2_DINOv3.loss_DINOv3 import InfoNCEPatchClassifyLoss
 from Task4_DINOv3.utils_LoRA import make_peft_lora_model, summarize_trainables, save_checkpoint
 
 
@@ -50,15 +50,7 @@ def finetune_LoRA(model, pretrained_state, loader_train, loader_val, device):
     all_hist = {}
     best_by_tag = {}
 
-    loss_fn = GaussianCrossEntropyLoss(
-            out_size=512,
-            patch_size=16,
-            temperature=0.2,
-            sigma=1.0,
-            window=7,
-            use_windowed=True,
-            enable_l2_norm=True,
-        )
+    loss_fn = InfoNCEPatchClassifyLoss(out_size=512, patch_size=16, temperature=0.07)
     
     for cfg in LORA_CONFIGS:
         tag = cfg["tag"]
@@ -95,7 +87,7 @@ def finetune_LoRA(model, pretrained_state, loader_train, loader_val, device):
 
         lora_model=lora_model.to(device)
 
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR( optimizer, T_max=2, eta_min=1e-6)
+        scheduler = CosineAnnealingLR( optimizer, T_max=2, eta_min=1e-6)
 
         for epoch in range(1, EPOCHS + 1):
             lora_model.train()
@@ -106,7 +98,7 @@ def finetune_LoRA(model, pretrained_state, loader_train, loader_val, device):
                 device,
                 scaler,
                 loss_fn,
-                max_train_batches=200,
+                max_train_batches=None,
                 n_layers_feats=1,
                 grad_clip=1.0,
             )   
@@ -118,7 +110,7 @@ def finetune_LoRA(model, pretrained_state, loader_train, loader_val, device):
                 loader_val,
                 device,
                 loss_fn,
-                max_val_batches=300,
+                max_val_batches=None,
                 n_layers_feats=1,
             )
 

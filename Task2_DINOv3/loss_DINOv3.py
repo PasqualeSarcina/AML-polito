@@ -1,293 +1,134 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
-from utils.matching_DINOv3 import grid_valid_mask_from_meta 
+def _pad_kps_list(kps_list, pad_value=-1.0):
+    """
+    kps_list: list of tensors [Ki,2] (variable Ki across batch)
+    Returns:
+      kps_pad: [B,Kmax,2]
+      is_real: [B,Kmax] bool
+    """
+    B = len(kps_list)
+    if B == 0:
+        raise ValueError("Empty batch for keypoints.")
+    Kmax = max(k.shape[0] for k in kps_list)
+    device = kps_list[0].device
+    dtype  = kps_list[0].dtype
 
-class GaussianCrossEntropyLoss:
-    def __init__(self, *, out_size, patch_size, temperature=0.5, sigma=2.0, eps=1e-8,
-                 enable_l2_norm=True, window=7, use_windowed=True):
+    kps_pad = torch.full((B, Kmax, 2), pad_value, device=device, dtype=dtype)
+    is_real = torch.zeros((B, Kmax), device=device, dtype=torch.bool)
+    for i, kps in enumerate(kps_list):
+        Ki = kps.shape[0]
+        kps_pad[i, :Ki] = kps
+        is_real[i, :Ki] = True
+    return kps_pad, is_real
+
+
+class InfoNCEPatchClassifyLoss(nn.Module):
+    """
+    For each source keypoint, classify which target feature cell (patch) is correct.
+
+    Expected by your train loop:
+      loss, nkps = loss_fn(src_feats, trg_feats, src_kps_list, trg_kps_list,
+                           src_meta_list, trg_meta_list, return_kps=True)
+    """
+    def __init__(
+        self,
+        *,
+        out_size=512,
+        patch_size=16,
+        temperature=0.07,
+        align_corners=True,
+        kp_to_cell="round",   # "round" or "floor"
+    ):
+        super().__init__()
         self.out_size = int(out_size)
         self.patch_size = int(patch_size)
         self.temperature = float(temperature)
-        self.sigma = float(sigma)
-        self.eps = float(eps)
-        self.enable_l2_norm = bool(enable_l2_norm)
+        self.align_corners = bool(align_corners)
+        assert kp_to_cell in ("round", "floor")
+        self.kp_to_cell = kp_to_cell
+        self.ce = nn.CrossEntropyLoss(reduction="none")
 
-        self.window = int(window)
-        assert self.window % 2 == 1, "window must be odd (e.g., 7)"
-        self.use_windowed = bool(use_windowed)
+    def forward(self, feat_src, feat_trg, src_kps_list, trg_kps_list, src_meta_list=None, trg_meta_list=None, *, return_kps=False):
+        B, C, Hf, Wf = feat_src.shape
+        device = feat_src.device
+        dtype  = feat_src.dtype
+        src_kps_list = [k.to(device=device, dtype=dtype) for k in src_kps_list]
+        trg_kps_list = [k.to(device=device, dtype=dtype) for k in trg_kps_list]
+        if feat_trg.shape != (B, C, Hf, Wf):
+            raise ValueError(f"feat_trg shape {feat_trg.shape} != feat_src shape {feat_src.shape}")
 
-        # kernel in patch-grid coords (not pixel coords)
-        self._kernel_cache = None  # built lazily on device
+        # pad variable-length keypoints
+        src_kps, src_real = _pad_kps_list(src_kps_list, pad_value=-1.0)  # [B,K,2]
+        trg_kps, trg_real = _pad_kps_list(trg_kps_list, pad_value=-1.0)
+        Kmax = src_kps.shape[1]
 
-    def __call__(
-        self,
-        src_feats: torch.Tensor,     # [B,C,Hf,Wf]
-        trg_feats: torch.Tensor,     # [B,C,Hf,Wf]
-        src_kps_list,                # list len B of [K,2] pixel coords
-        trg_kps_list,                # list len B of [K,2] pixel coords
-        src_meta_list,               # list len B of dict
-        trg_meta_list,               # list len B of dict
-        *,
-        temperature: float | None = None,
-        return_kps: bool = False,
-        sigma: float | None = None,
-    ) -> torch.Tensor:
-        assert src_feats.ndim == 4 and trg_feats.ndim == 4, "Expected [B,C,Hf,Wf]"
-        B, C, Hf, Wf = trg_feats.shape
-        device = trg_feats.device
+        if Kmax == 0:
+            loss = feat_src.sum() * 0.0
+            return (loss, 0) if return_kps else loss
 
-        out_size = self.out_size
-        patch = self.patch_size
-        temp = max(float(self.temperature if temperature is None else temperature), self.eps)
-        sigma_eff = float(self.sigma if sigma is None else sigma)
-        sig2 = 2.0 * (sigma_eff ** 2)
+        # validity: exists + nonnegative + in bounds
+        def in_bounds(kps):
+            x = kps[..., 0]
+            y = kps[..., 1]
+            return (x >= 0) & (y >= 0) & (x <= self.out_size - 1) & (y <= self.out_size - 1)
 
-        # (optional) L2 norm on channel dim for cosine sim
-        if self.enable_l2_norm:
-            srcn = F.normalize(src_feats, dim=1)
-            trgn = F.normalize(trg_feats, dim=1)
+        valid = src_real & trg_real & in_bounds(src_kps) & in_bounds(trg_kps)  # [B,K] bool
+        nkps = int(valid.sum().item())
+        if nkps == 0:
+            loss = feat_src.sum() * 0.0
+            return (loss, 0) if return_kps else loss
+
+        # mapping padded pixels -> feature grid coords (assumes linear mapping)
+        sx = (Wf - 1) / (self.out_size - 1)
+        sy = (Hf - 1) / (self.out_size - 1)
+
+        # ---- sample source descriptors with grid_sample
+        src_xf = src_kps[..., 0] * sx
+        src_yf = src_kps[..., 1] * sy
+
+        if self.align_corners:
+            gx = (src_xf / (Wf - 1)) * 2 - 1
+            gy = (src_yf / (Hf - 1)) * 2 - 1
         else:
-            srcn = src_feats
-            trgn = trg_feats
+            gx = (src_xf + 0.5) / Wf * 2 - 1
+            gy = (src_yf + 0.5) / Hf * 2 - 1
 
-        N = Hf * Wf
-        trgn_flat = trgn.view(B, C, N).transpose(1, 2).contiguous()  # [B,N,C]
+        grid = torch.stack([gx, gy], dim=-1).unsqueeze(2)  # [B,K,1,2]
 
-        # patch-grid coordinates for gaussian construction
-        yy, xx = torch.meshgrid(
-            torch.arange(Hf, device=device, dtype=torch.float32),
-            torch.arange(Wf, device=device, dtype=torch.float32),
-            indexing="ij",
-        )
+        desc_src = F.grid_sample(
+            feat_src, grid, mode="bilinear", align_corners=self.align_corners
+        )  # [B,C,K,1]
+        desc_src = desc_src.squeeze(-1).permute(0, 2, 1)  # [B,K,C]
+        desc_src = F.normalize(desc_src, dim=-1)
 
-        total_loss = torch.zeros((), device=device)
-        total_kps = 0
+        # ---- flatten target features (classes)
+        feat_trg_flat = F.normalize(feat_trg.flatten(2), dim=1)  # [B,C,N], N=Hf*Wf
 
-        for b in range(B):
-            src_kps, trg_kps = self._to_kps_tensors(src_kps_list[b], trg_kps_list[b], device)
-            if src_kps.numel() == 0:
-                continue
+        # logits: [B,K,N]
+        logits = torch.bmm(desc_src, feat_trg_flat) / self.temperature
 
-            # filter visible/in-bounds in pixel coords (your current behavior)
-            valid = self._valid_pixel_kps(src_kps, trg_kps, out_size)
-            if valid.sum().item() == 0:
-                continue
-
-            src_kps_v = src_kps[valid]
-            trg_kps_v = trg_kps[valid]
-
-            # padding-aware valid patch masks
-            src_grid_valid = grid_valid_mask_from_meta(src_meta_list[b], out_size=out_size, patch=patch, device=device)
-            trg_grid_valid = grid_valid_mask_from_meta(trg_meta_list[b], out_size=out_size, patch=patch, device=device)
-            trg_valid_flat = trg_grid_valid.view(-1)  # [N] bool
-
-            # source patch index = nearest patch CENTER (your convention)
-            sx = torch.clamp(((src_kps_v[:, 0] / patch) - 0.5).round().long(), 0, Wf - 1)
-            sy = torch.clamp(((src_kps_v[:, 1] / patch) - 0.5).round().long(), 0, Hf - 1)
-
-            # drop src kps falling on padded src patches
-            src_on_valid = src_grid_valid[sy, sx]
-            if src_on_valid.sum().item() == 0:
-                continue
-
-            sx = sx[src_on_valid]
-            sy = sy[src_on_valid]
-            trg_kps_v = trg_kps_v[src_on_valid]
-            Kv = int(trg_kps_v.shape[0])
-            # -------------------------------------------------
-            # DROP TARGET KPS FALLING ON PADDED TARGET PATCHES
-            # -------------------------------------------------
-            tx = torch.clamp(((trg_kps_v[:, 0] / patch) - 0.5).round().long(), 0, Wf - 1)
-            ty = torch.clamp(((trg_kps_v[:, 1] / patch) - 0.5).round().long(), 0, Hf - 1)
-
-            trg_on_valid = trg_grid_valid[ty, tx]
-            if trg_on_valid.sum().item() == 0:
-                continue
-
-            # apply target validity mask (keep geometry consistent)
-            sx = sx[trg_on_valid]
-            sy = sy[trg_on_valid]
-            trg_kps_v = trg_kps_v[trg_on_valid]
-            Kv = int(trg_kps_v.shape[0])
-
-            # [Kv,C] source descriptors
-            src_desc = srcn[b, :, sy, sx].transpose(0, 1).contiguous()
-
-            # logits over target patches [Kv,N]
-            logits = (trgn_flat[b] @ src_desc.T).transpose(0, 1).contiguous() / temp
-
-            # stable log_probs with padding mask (your key property)
-            log_probs = self._masked_log_softmax_fp32(logits, trg_valid_flat)
-
-            # gaussian centers in patch coords (your convention)
-            cx = (trg_kps_v[:, 0] / patch) - 0.5
-            cy = (trg_kps_v[:, 1] / patch) - 0.5
-
-
-            if self.use_windowed:
-                loss_b = self._gaussian_ce_windowed(
-                    log_probs=log_probs,
-                    trg_grid_valid=trg_grid_valid,
-                    cx=cx, cy=cy,
-                    Hf=Hf, Wf=Wf,
-                    sigma_eff=sigma_eff,
-                )
-            else:
-                loss_b = self._gaussian_ce_over_grid(
-                    log_probs=log_probs,
-                    xx=xx, yy=yy,
-                    cx=cx, cy=cy,
-                    trg_valid_flat=trg_valid_flat,
-                    sig2=2.0 * (sigma_eff ** 2),
-                )
-
-            total_loss = total_loss + loss_b
-            total_kps += Kv
-
-        if total_kps == 0:
-            if return_kps:
-                return torch.zeros((), device=device), 0
-            return torch.zeros((), device=device)
-
-        out = total_loss / total_kps
-        if return_kps:
-            return out, total_kps
-        return out
-
-    # ------------------------
-    # Helpers (SD4Match-like)
-    # ------------------------
-    def _get_kernel(self, device, sigma_eff: float):
-        key = (device, int(self.window), float(sigma_eff))
-        if getattr(self, "_kernel_key", None) == key and self._kernel_cache is not None:
-            return self._kernel_cache
-
-        w = self.window
-        r = w // 2
-        yy, xx = torch.meshgrid(
-            torch.arange(-r, r + 1, device=device, dtype=torch.float32),
-            torch.arange(-r, r + 1, device=device, dtype=torch.float32),
-            indexing="ij",
-        )
-        sig2 = 2.0 * (float(sigma_eff) ** 2)
-        k = torch.exp(-(xx * xx + yy * yy) / (sig2 + self.eps))
-        k = k / (k.sum() + self.eps)
-
-        self._kernel_cache = k
-        self._kernel_key = key
-        return k
-
-    def _gaussian_ce_windowed(
-        self,
-        *,
-        log_probs: torch.Tensor,      # [Kv,N]
-        trg_grid_valid: torch.Tensor, # [Hf,Wf] bool
-        cx: torch.Tensor, cy: torch.Tensor,  # [Kv] in patch coords (float)
-        Hf: int, Wf: int,
-        sigma_eff: float
-    ) -> torch.Tensor:
-        eps = self.eps
-        Kv = int(cx.shape[0])
-        logp_map = log_probs.view(Kv, Hf, Wf)  # [Kv,Hf,Wf]
-        kernel = self._get_kernel(log_probs.device, sigma_eff)
-        w = self.window
-        r = w // 2
-
-        loss_sum = torch.zeros((), device=log_probs.device, dtype=torch.float32)
-
-        # choose center patch index (SD4Match uses subpixel; here nearest patch)
-        ix0 = torch.clamp(cx.round().long(), 0, Wf - 1)
-        iy0 = torch.clamp(cy.round().long(), 0, Hf - 1)
-
-        for k in range(Kv):
-            ix = int(ix0[k].item())
-            iy = int(iy0[k].item())
-
-            x0 = ix - r; x1 = ix + r + 1
-            y0 = iy - r; y1 = iy + r + 1
-
-            # clip to grid bounds
-            xc0 = max(0, x0); xc1 = min(Wf, x1)
-            yc0 = max(0, y0); yc1 = min(Hf, y1)
-
-            # slice window
-            lp = logp_map[k, yc0:yc1, xc0:xc1]                # [hwin, wwin]
-            m  = trg_grid_valid[yc0:yc1, xc0:xc1].float()     # [hwin, wwin]
-
-            # kernel slice (because we clipped window)
-            ky0 = yc0 - y0
-            kx0 = xc0 - x0
-            ky1 = ky0 + (yc1 - yc0)
-            kx1 = kx0 + (xc1 - xc0)
-            kw = kernel[ky0:ky1, kx0:kx1]                     # [hwin, wwin]
-
-            # padding-aware: zero invalid + renorm
-            wgt = kw * m
-            denom = wgt.sum()
-            if denom.item() <= 0:
-                continue
-            wgt = wgt / (denom + eps)
-
-            loss_sum = loss_sum - torch.sum(wgt * lp)
-
-        return loss_sum
-
-    def _to_kps_tensors(self, src_kps, trg_kps, device):
-        if not isinstance(src_kps, torch.Tensor):
-            src_kps = torch.tensor(src_kps, device=device, dtype=torch.float32)
+        # ---- hard labels for each kp (target grid index)
+        trg_xf = trg_kps[..., 0] * sx
+        trg_yf = trg_kps[..., 1] * sy
+        if self.kp_to_cell == "round":
+            trg_xi = trg_xf.round().long()
+            trg_yi = trg_yf.round().long()
         else:
-            src_kps = src_kps.to(device=device, dtype=torch.float32)
+            trg_xi = trg_xf.floor().long()
+            trg_yi = trg_yf.floor().long()
 
-        if not isinstance(trg_kps, torch.Tensor):
-            trg_kps = torch.tensor(trg_kps, device=device, dtype=torch.float32)
-        else:
-            trg_kps = trg_kps.to(device=device, dtype=torch.float32)
+        trg_xi = trg_xi.clamp(0, Wf - 1)
+        trg_yi = trg_yi.clamp(0, Hf - 1)
+        target_cls = (trg_yi * Wf + trg_xi)  # [B,K] in [0..Hf*Wf-1]
 
-        return src_kps, trg_kps
+        # ---- CE, masked
+        loss_per = self.ce(logits.reshape(B * Kmax, -1), target_cls.reshape(B * Kmax))
+        loss_per = loss_per.view(B, Kmax)
 
-    def _valid_pixel_kps(self, src_kps: torch.Tensor, trg_kps: torch.Tensor, out_size: int) -> torch.Tensor:
-        return (
-            (src_kps[:, 0] >= 0) & (src_kps[:, 1] >= 0) &
-            (src_kps[:, 0] < out_size) & (src_kps[:, 1] < out_size) &
-            (trg_kps[:, 0] >= 0) & (trg_kps[:, 1] >= 0) &
-            (trg_kps[:, 0] < out_size) & (trg_kps[:, 1] < out_size)
-        )
+        vf = valid.to(loss_per.dtype)
+        loss = (loss_per * vf).sum() / (vf.sum() + 1e-6)
 
-    def _masked_log_softmax_fp32(self, logits: torch.Tensor, trg_valid_flat: torch.Tensor) -> torch.Tensor:
-        # logits: [Kv,N] (float16/32 ok)
-        mask = ~trg_valid_flat.unsqueeze(0)  # [1,N] bool
-        logits_fp32 = logits.float().masked_fill(mask, -1e9)
-        return F.log_softmax(logits_fp32, dim=-1)  # [Kv,N] fp32
-
-    def _gaussian_ce_over_grid(
-        self,
-        *,
-        log_probs: torch.Tensor,         # [Kv,N]
-        xx: torch.Tensor, yy: torch.Tensor,  # [Hf,Wf]
-        cx: torch.Tensor, cy: torch.Tensor,  # [Kv]
-        trg_valid_flat: torch.Tensor,    # [N] bool
-        sig2: float,
-    ) -> torch.Tensor:
-        eps = self.eps
-        Hf, Wf = xx.shape
-        Kv = int(cx.shape[0])
-
-        # compute per-kp gaussian CE (loop is fine; Kv small)
-        loss_sum = torch.zeros((), device=log_probs.device, dtype=torch.float32)
-
-        valid_f = trg_valid_flat.float()
-        for k in range(Kv):
-            dx = xx - cx[k]
-            dy = yy - cy[k]
-            g = torch.exp(-(dx * dx + dy * dy) / (sig2 + eps))  # [Hf,Wf]
-            g_flat = g.reshape(-1) * valid_f                    # [N]
-            denom = g_flat.sum()
-            if denom.item() <= 0:
-                continue
-            g_flat = g_flat / (denom + eps)
-
-            loss_sum = loss_sum - torch.sum(g_flat * log_probs[k])
-
-        return loss_sum
-
+        return (loss, nkps) if return_kps else loss

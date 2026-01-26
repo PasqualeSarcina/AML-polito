@@ -3,9 +3,6 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 from utils.extraction_DINOv3 import extract_dense_features
-from .loss_DINOv3 import GaussianCrossEntropyLoss
-from .eval_val_DINOv3 import evaluate_model_batched
-
 PATH_CHECKPOINTS = ".checkpoints/dinov3/"
 
 
