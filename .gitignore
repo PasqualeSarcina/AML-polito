@@ -1,3 +1,17 @@
+dataset/*
+!dataset/.gitkeep
+*.zip
+*.tar
+*.tar.gz
+
+# Ignore model checkpoints
+models/dinov2/task2_dinov2/checkpoints/
+*.pth
+
+# Ignore model checkpoints
+models/dinov2/task4_dinov2/checkpoints/
+*.pth
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -174,4 +188,7 @@ cython_debug/
 .pypirc
 
 # Dataset
-dataset/
+dataset/*
+!dataset/.gitkeep
+
+data/features/*
