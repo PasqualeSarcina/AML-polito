@@ -17,10 +17,6 @@ from utils.matching_DINOv3 import match_wsa_nearest_patch_masked, match_argmax_n
 
 from utils.printing_helpers_DINOv3 import print_report, print_per_category
 
-
-# ----------------------------
-# Evaluation (global + per-category, micro + macro)
-# ----------------------------
 @torch.no_grad()
 def evaluate_model(
     name: str,
@@ -31,16 +27,11 @@ def evaluate_model(
     n_layers: int = 1,
     thresholds=(0.05, 0.10, 0.20),
     max_pairs: int | None = None,
-    verbose_every: int = 0,   # 0 = no periodic prints
+    verbose_every: int = 0,   
     use_wsa: bool = False,
     wsa_window: int = 5,
     wsa_temp: float = 0.1,
 ):
-    """
-    Returns a report dict consistent with Task1/Task2 printers:
-    - macro = per-pair mean (aka per-image mean)
-    - micro = per-keypoint global
-    """
 
     model.eval()
 
@@ -67,7 +58,6 @@ def evaluate_model(
     t0 = time.time()
     pairs_seen = 0
 
-    # tqdm total: use max_pairs if provided; otherwise keep it unspecified
     pbar_total = max_pairs if max_pairs is not None else None
     pbar = tqdm(loader, total=pbar_total, desc=f"{name}", leave=True)
 
@@ -75,8 +65,6 @@ def evaluate_model(
         if max_pairs is not None and pairs_seen >= max_pairs:
             break
 
-        # NOTE: this assumes evaluation loader has batch_size=1
-        # (otherwise 'category' could be a list / unhashable).
         cat = sample.get("category", "unknown")
         pair_id = sample.get("pair_id", f"pair_{i}")
 
@@ -281,7 +269,6 @@ def main():
 
     print("\n--- 4. Evaluating Model ---")
 
-    # You can change these to match exactly the settings you want to report
     wsa_window = 5
     wsa_temp = 0.1
 

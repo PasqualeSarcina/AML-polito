@@ -9,7 +9,6 @@ def evaluate_model_batched(
     name: str,
     model,
     loader,
-    device,
     max_pairs: int | None = None,
     n_layers: int = 1,
     patch_size: int | None = None,

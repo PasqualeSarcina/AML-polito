@@ -9,11 +9,9 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from models.dinov3.model_DINOv3 import load_dinov3_backbone
-from dataset.dataset_DINOv3 import SPairDataset, collate_spair
+from dataset.dataset_DINOv3 import SPairDataset, collate_single
 from utils.setup_data_DINOv3 import setup_data
 
-from utils.extraction_DINOv3 import extract_dense_features
-from utils.matching_DINOv3 import match_wsa_nearest_patch_masked
 from utils.printing_helpers_DINOv3 import print_report, print_per_category
 
 from eval import evaluate_model
@@ -36,19 +34,14 @@ def load_checkpoint_into_model(model, ckpt_path: Path, device: torch.device, *, 
     elif isinstance(ckpt, dict) and "model" in ckpt:
         state = ckpt["model"]
     else:
-        state = ckpt  # assume raw state_dict
+        state = ckpt  
 
-    # common safety if trained with DataParallel
     if isinstance(state, dict) and any(k.startswith("module.") for k in state.keys()):
         state = {k.replace("module.", "", 1): v for k, v in state.items()}
 
     msg = model.load_state_dict(state, strict=strict)
     return msg
 
-
-# ----------------------------
-# Main
-# ----------------------------
 def main():
     data_root = setup_data()
     if data_root is None:
@@ -71,7 +64,7 @@ def main():
         batch_size=1,
         shuffle=False,
         num_workers=2,
-        collate_fn=collate_spair,
+        collate_fn=collate_single,
         pin_memory=True,
         persistent_workers=True,
         drop_last=False,
@@ -82,7 +75,6 @@ def main():
     dinov3_dir = Path("/content/dinov3") if Path("/content/dinov3").exists() else Path("third_party/dinov3")
     weights_path = Path("checkpoints/dinov3/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth")
 
-    # Build the backbone once (same architecture), then load different checkpoints into it
     model = load_dinov3_backbone(
         dinov3_dir=dinov3_dir,
         weights_path=weights_path,
@@ -92,12 +84,9 @@ def main():
     )
     freeze_all(model)
 
-
-    # Evaluate these checkpoints:
     layers_to_eval = "Layer_1"
     ckpt_dir = Path("checkpoints/dinov3")
 
-    # Matching settings (keep consistent with your Task3 base eval)
     wsa_window = 5
     wsa_temp = 0.1
 
@@ -110,11 +99,9 @@ def main():
         print(f"[SKIP] Missing checkpoint: {ckpt_path}")
         return
 
-    # Load weights for this layer checkpoint
-    msg = load_checkpoint_into_model(model, ckpt_path, device, strict=True)
+    msg = load_checkpoint_into_model( finetuned_model, ckpt_path, device, strict=True)
     print(f"\nLoaded {ckpt_path.name}: {msg}")
 
-    # Evaluate (same metric as base eval)
     r_best_argmax = evaluate_model(
         name="Task3_Best_Argmax",
         model=finetuned_model,

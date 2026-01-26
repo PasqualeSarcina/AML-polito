@@ -7,7 +7,7 @@ from copy import deepcopy
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from dataset.dataset_DINOv3 import SPairDataset, collate_spair
 from models.dinov3.model_DINOv3 import load_dinov3_backbone
@@ -19,6 +19,7 @@ from Task2_DINOv3.prepare_train import (
     PATH_CHECKPOINTS,  # IMPORTANT: single source of truth
 )
 from utils.setup_data_DINOv3 import setup_data
+from Task2_DINOv3.loss_DINOv3 import GaussianCrossEntropyLoss
 
 
 def seed_everything(seed=42):
@@ -34,21 +35,10 @@ def seed_everything(seed=42):
 class FinetuneScreeningResult:
     layer_name: str
     best_epoch: int
-    best_pck10: float
+    best_val_loss: float
     history: dict
     best_ckpt_path: str | None
-
-
-# -----------------------------
-# Global settings
-# -----------------------------
-OUT_SIZE = 512
-N_LAYERS_FEATS = 1
-LAYERS_TO_TEST = [1, 2, 4]
-EPOCHS = 2
-LR = 1e-3
-WEIGHT_DECAY = 0.01
-
+    
 def freeze_all(model):
     for p in model.parameters():
         p.requires_grad_(False)
@@ -71,12 +61,21 @@ def finetune_screening(
     os.makedirs(PATH_CHECKPOINTS, exist_ok=True)
     best_ckpt_path = os.path.join(PATH_CHECKPOINTS, f"best_model_{layer_name}.pth")
 
-    # 1) restore pretrained (NO wrapper)
     model.load_state_dict(pretrained_state, strict=True)
     model.to(device)
     freeze_all(model)
 
-    # 2) unfreeze last blocks (+ final norm)
+    loss_fn = GaussianCrossEntropyLoss(
+        out_size=512,
+        patch_size=16,
+        temperature=0.2,
+        sigma=1.0,
+        window=7,
+        use_windowed=True,
+        enable_l2_norm=True,
+    )
+
+    
     prepare_model_for_fine_tuning(
         model,
         num_layers_to_unfreeze=n_layer,
@@ -84,16 +83,19 @@ def finetune_screening(
     )
 
     optimizer = torch.optim.AdamW(
-        [p for p in model.parameters() if p.requires_grad],
-        lr=lr,
-        weight_decay=weight_decay,
+            (p for p in model.parameters() if p.requires_grad),
+            lr=1e-3,
+            weight_decay=1e-2,
+        )
+
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=epochs, eta_min=1e-6
     )
-    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
 
-    scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=1, threshold=1e-4, min_lr=1e-7)
+    history = {"train_loss": [], "val_loss": [], "lr": []}
+    best_val_loss, best_epoch = float("inf"), -1
 
-    history = {"train_loss": [], "val_loss": [], "pck_05": [], "pck_10": [], "pck_20": [], "lr": []}
-    best_pck10, best_epoch = -1.0, -1
+    scaler = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda"))
 
     for epoch in range(1, epochs + 1):
         train_loss = train_one_epoch(
@@ -102,72 +104,63 @@ def finetune_screening(
             optimizer=optimizer,
             device=device,
             scaler=scaler,
-            out_size=512,
-            patch_size=16,
-            n_layers_feats=N_LAYERS_FEATS,
+            loss_fn=loss_fn,
             max_train_batches=None,
+            n_layers_feats=1,
+            grad_clip=1.0,
         )
 
         val_res = validate_one_epoch(
             model=model,
             loader=loader_val,
             device=device,
-            out_size=512,
-            patch_size=16,
-            n_layers_feats=N_LAYERS_FEATS,
+            loss_fn=loss_fn,
             max_val_batches=None,
-            max_pck_pairs_val=None,
+            n_layers_feats=1,     
         )
 
-        scheduler.step(float(val_res["val_loss"]))
-
-        current_lr = optimizer.param_groups[0]['lr']
+        current_lr = optimizer.param_groups[0]['lr']  
+        history["lr"].append(current_lr)
+        scheduler.step()
         history["train_loss"].append(float(train_loss))
         history["val_loss"].append(float(val_res["val_loss"]))
-        history["pck_05"].append(float(val_res["pck_05"]))
-        history["pck_10"].append(float(val_res["pck_10"]))
-        history["pck_20"].append(float(val_res["pck_20"]))
-        history["lr"].append(current_lr)
+
 
         print(
             f"Epoch {epoch}: "
             f"Train Loss {float(train_loss):.4f} | "
             f"Val Loss {float(val_res['val_loss']):.4f} | "
-            f"PCK@0.05: {float(val_res['pck_05']):.2f}% | "
-            f"PCK@0.10: {float(val_res['pck_10']):.2f}% | "
-            f"PCK@0.20: {float(val_res['pck_20']):.2f}%"
         )
 
-        if float(val_res["pck_10"]) > best_pck10:
-            best_pck10 = float(val_res["pck_10"])
+        if float(val_res['val_loss']) < best_val_loss:
+            best_val_loss = float(val_res["val_loss"])
             best_epoch = epoch
 
             save_checkpoint(
                 model=model,
                 optimizer=optimizer,
-                epoch=epoch,
-                pck=best_pck10,
+                epoch=best_epoch,
                 layer_name=layer_name,
                 is_best=True,
                 scaler=scaler,
                 hparams={
                     "epochs": epochs,
-                    "lr": lr,
-                    "sigma": 2.0,
-                    "temperature": 0.5,
+                    "lr": current_lr,
+                    "sigma": 1.0,
+                    "temperature": 0.2,
                     "weight_decay": weight_decay,
                     "n_layer": n_layer,
                     "out_size": 512,
                     "patch_size": 16,
-                    "n_layers_feats": N_LAYERS_FEATS,
+                    "n_layers_feats": 1,
+                    "best_val_loss": best_val_loss,
                 },
             )
 
     if not os.path.exists(best_ckpt_path):
         best_ckpt_path = None
 
-    return FinetuneScreeningResult(layer_name, best_epoch, best_pck10, history, best_ckpt_path)
-
+    return FinetuneScreeningResult(layer_name, best_epoch, best_val_loss, history, best_ckpt_path)
 
 # -----------------------------
 # Main
@@ -205,31 +198,28 @@ def main():
     # snapshot pretrained once
     pretrained_state = deepcopy(model.state_dict())
 
-    # Screening loop
-    results = {}
-    best_tag, best_pck = None, -1.0
+    best_val_loss = float("inf")
+    best_epoch = -1
+    best_tag = ""
 
-    for n_layer in LAYERS_TO_TEST:
-        r = finetune_screening(
-            model,
-            pretrained_state,
-            loader_train,
-            loader_val,
-            device,
-            epochs=EPOCHS,
-            lr=LR,
-            weight_decay=WEIGHT_DECAY,
-            n_layer=n_layer,
-        )
-        results[r.layer_name] = r
+    r = finetune_screening(
+        model,
+        pretrained_state,
+        loader_train,
+        loader_val,
+        device,
+        epochs=5,
+        lr=1e-3,
+        weight_decay=1e-2,
+        n_layer=1,
+    )
 
+    if r.best_val_loss < best_val_loss:
+        best_val_loss = r.best_val_loss
+        best_epoch = r.best_epoch
+        best_tag = r.layer_name
 
-        if r.best_pck10 > best_pck:
-            best_pck = r.best_pck10
-            best_tag = r.layer_name
-
-    print(f"\n>>> BEST CONFIG: {best_tag} | PCK@0.10={best_pck:.2f}")
-
+    print(f"\n>>> BEST CONFIG: {best_tag} | Val loss={best_val_loss:.2f} - epoch {best_epoch} <<<\n")
 
 if __name__ == "__main__":
     main()
