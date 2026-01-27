@@ -34,7 +34,7 @@ def setup_data():
         if tar_file.exists():
             print(f"Extracting {tar_file}...")
             with tarfile.open(tar_file, "r:*") as t:
-                t.extractall(extract_dir)
+                t.extractall(extract_dir, filter="data")
             return extract_dir
 
     print(

@@ -14,14 +14,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data.dataset_DINOv3_train import SPairDataset
 from utils.setup_data_DINOv3 import setup_data
 from models.dinov3.model_DINOv3 import load_dinov3_backbone
-from Task2_DINOv3.loss_DINOv3 import InfoNCELoss
+from Task2_DINOv3.loss import InfoNCELoss
 
 data_root = setup_data()
 if data_root is None:
     print("Error: Dataset not found. Please run utils/setup_data.py or check data location.")
     sys.exit(1)
 
-base_dir = os.path.join(data_root, 'SPair-71k','Spair-71k')
+base_dir = os.path.join(data_root, 'SPair-71k')
 pair_ann_path = os.path.join(base_dir, 'PairAnnotation')
 layout_path = os.path.join(base_dir, 'Layout')
 image_path = os.path.join(base_dir, 'JPEGImages')
@@ -68,7 +68,8 @@ def fine_tuning(epochs, lr, w_decay):
     seed_everything(42)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dinov3_dir = Path("/content/dinov3") if Path("/content/dinov3").exists() else Path("third_party/dinov3")
-    weights_path = Path("checkpoints/dinov3/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth")
+    project_root = Path(__file__).resolve().parents[1]
+    weights_path = project_root / "checkpoints" / "dinov3" / "dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth"
     model = load_dinov3_backbone(
             dinov3_dir=dinov3_dir,
             weights_path=weights_path,
@@ -82,18 +83,18 @@ def fine_tuning(epochs, lr, w_decay):
     lora_config = LoraConfig(
         r=16,                  
         lora_alpha=32,          
-        target_modules=["qkv"], # layer 'qkv' per l'attenzione
+        target_modules=["qkv"], # Target the QKV projection layers in the Attention modules
         lora_dropout=0.1,      
         bias="none"
     )
 
-    # 3. Applica LoRA al modello
+    # 3. Apply LoRA to the model
     model = get_peft_model(model, lora_config)
 
-    # 4. Sposta su GPU
+    # 4. Move model to device
     model = model.to(device)
 
-    # 5. Stampa di controllo
+    # 5. control trainable parameters
     model.print_trainable_parameters()
     
     criterion = InfoNCELoss(temperature=0.07).to(device)
@@ -123,6 +124,7 @@ def fine_tuning(epochs, lr, w_decay):
             trg_kps = batch['trg_kps'].to(device)
             mask    = batch['valid_mask'].to(device)
             
+            model.train()
             with torch.amp.autocast('cuda'):
                 output_src = model.forward_features(src_img)
                 output_trg = model.forward_features(trg_img)
@@ -152,7 +154,6 @@ def fine_tuning(epochs, lr, w_decay):
         print(f"Epoch [{epoch+1}/{num_epochs}] Avg Training Loss: {avg_train_loss:.4f}")
         scheduler.step()
         
-        # Optional: Print current LR to verify
         current_lr = scheduler.get_last_lr()[0]
         print(f"--> Learning Rate for next epoch: {current_lr:.8f}")
         
@@ -191,9 +192,14 @@ def fine_tuning(epochs, lr, w_decay):
             print(f"Epoch [{epoch+1}/{num_epochs}] Avg Validation Loss: {avg_val_loss:.4f}")
             if avg_val_loss < best_val_loss:
                 best_val_loss=avg_val_loss
-                os.makedirs("checkpoints", exist_ok=True)
-                # Save the weights
-                model.save_pretrained("/content/drive/MyDrive/AMLDataset/checkpoints/dinov3/best_model_LoRA.pth")
+                project_root = Path(__file__).resolve().parents[1]   # AML-polito
+                save_dir = project_root / "checkpoints" / "dinov3"
+                save_dir.mkdir(parents=True, exist_ok=True)
+
+                best_dir = save_dir / "best_model_LoRA"
+                model.save_pretrained(best_dir)
+
+                print(f"Saved PEFT adapter to: {best_dir}")
                 print(f"--> New Best Model Saved! (Loss: {best_val_loss:.4f})")
 
 if __name__ == "__main__":

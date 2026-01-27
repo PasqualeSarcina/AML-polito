@@ -134,7 +134,7 @@ class SPairDataset(Dataset):
 if __name__ == '__main__':
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(current_dir)
-    base_dir = os.path.join(project_root, 'data', 'SPair-71k_extracted', 'SPair-71k', 'SPair-71k')
+    base_dir = os.path.join(project_root, 'data', 'SPair-71k_extracted', 'SPair-71k')
     pair_ann_path = os.path.join(base_dir, 'PairAnnotation')
     layout_path = os.path.join(base_dir, 'Layout')
     image_path = os.path.join(base_dir, 'JPEGImages')
@@ -149,4 +149,4 @@ if __name__ == '__main__':
         print(f"Batch Keypoints: {batch['src_kps'].shape}")   # Should be [4, 40, 2]
     else:
         print(f"Path not found: {base_dir}")
-        print("Run 'utils/data_setup.py' first!")
+        print("Run 'utils/data_setup_data_DINOv3.py' first!")

@@ -4,22 +4,20 @@ import numpy as np
 # --- DATA ENTRY ---
 
 # Epochs (X-axis)
-epochs = [1, 2, 3, 4, 5]
+epochs = [1, 2, 3]
 
-# EXPERIMENT 1: First Run (LR=1e-4, Batch Size=5)
-# Risultato: Overfitting rapido dopo ep 1.
-exp1_train = [2.2234, 1.5996, 1.3826, 1.1763, 1.0211]
-exp1_val   = [2.7441, 2.9191, 3.1801, 3.2766, 3.4100]
+# EXPERIMENT 1: First Run (LR=1e-4 Batch Size=8)
+exp1_train = [2.6911, 2.0850, 1.8327]
+exp1_val   = [2.6616, 2.6300, 2.7220]
 
-# EXPERIMENT 2: The "Safe Mode" Run (LR=1e-5, Batch Size=8)
-# Risultato: Molto stabile ma lento (Underfitting). Best val alla fine.
-exp2_train = [3.2551, 2.6684, 2.4777, 2.3809, 2.3396]
-exp2_val   = [3.0835, 2.9691, 2.9341, 2.9259, 2.9391]
 
-# EXPERIMENT 3: The "Aggressive + Batch 8" Run (LR=1e-4, Batch Size=8)
-# Risultato: Simile a Exp 1, ottimo inizio ma poi Overfitting.
-exp3_train = [2.3656, 1.7101, 1.4686, 1.3402, 1.2627]
-exp3_val   = [2.8027, 2.9640, 3.1855, 3.3472, 3.3250]
+# EXPERIMENT 2: (LR=1e-5 Batch Size=8)
+exp2_train = [3.5391, ]
+exp2_val   = [3.1845, ]
+
+# EXPERIMENT 3: (LR=1e-5 Batch Size=4)
+exp3_train = []
+exp3_val   = []
 
 # --- PLOTTING ---
 

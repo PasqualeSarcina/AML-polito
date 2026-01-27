@@ -20,11 +20,8 @@ class InfoNCELoss(nn.Module):
 
 
         # --- 1. Extract Source Descriptors ---
-        # We sample the EXACT vector at the source keypoint (x, y)
-        # Normalize coords to [-1, 1] for grid_sample
         src_norm = self._normalize_coords(kps_src, H, W, patch_size) # [B, K, 1, 2]
 
-        # Sample: [B, C, H, W] + [B, K, 1, 2] -> [B, C, K, 1]
         desc_src = F.grid_sample(feat_src, src_norm, align_corners=True, mode='bilinear')
         desc_src = desc_src.squeeze(-1).permute(0, 2, 1) # [B, K, C]
 
@@ -33,12 +30,9 @@ class InfoNCELoss(nn.Module):
         feat_trg_flat = F.normalize(feat_trg.flatten(2), dim=1) # [B, C, N_patches]
 
         # --- 2. Calculate Similarity Heatmap ---
-        # "Compare every Source Point against ALL Target Patches"
-        # [B, K, C] @ [B, C, 1369] -> [B, K, 1369]
         logits = torch.bmm(desc_src, feat_trg_flat) / self.temperature
 
         # --- 3. Create Ground Truth Labels ---
-        # "Which target patch index (0-1368) contains the target keypoint?"
         trg_x_grid = (kps_trg[:, :, 0] / patch_size).round().long()
         trg_y_grid = (kps_trg[:, :, 1] / patch_size).round().long()
 
@@ -46,8 +40,6 @@ class InfoNCELoss(nn.Module):
         trg_x_grid = trg_x_grid.clamp(0, W - 1)
         trg_y_grid = trg_y_grid.clamp(0, H - 1)
 
-        # Convert Grid (x,y) to Flat Index (0 to 1368)
-        # Formula: y * Width + x
         target_classes = (trg_y_grid * W) + trg_x_grid # [B, K]
 
         # --- 4. Calculate Loss ---

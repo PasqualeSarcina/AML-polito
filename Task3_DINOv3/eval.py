@@ -22,7 +22,7 @@ if __name__ == '__main__':
         print("CRITICAL ERROR: Data could not be set up. Exiting.")
         exit()
 
-    base_dir = os.path.join(data_root, 'SPair-71k','Spair-71k') 
+    base_dir = os.path.join(data_root, 'SPair-71k') 
     pair_ann_path = os.path.join(base_dir, 'PairAnnotation')
     layout_path = os.path.join(base_dir, 'Layout')
     image_path = os.path.join(base_dir, 'JPEGImages')
@@ -47,9 +47,10 @@ if __name__ == '__main__':
     print(f"Test Set Loaded: {len(test_dataset)} images.")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"\n--- 3. Loading DINOv2 on {device} ---")
+    print(f"\n--- 3. Loading DINOv3 on {device} ---")
     dinov3_dir = Path("/content/dinov3") if Path("/content/dinov3").exists() else Path("third_party/dinov3")
-    weights_path = Path("checkpoints/dinov3/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth")
+    project_root = Path(__file__).resolve().parents[1]
+    weights_path = project_root / "checkpoints" / "dinov3" / "dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth"
     model = load_dinov3_backbone(
         dinov3_dir=dinov3_dir,
         weights_path=weights_path,
@@ -57,6 +58,8 @@ if __name__ == '__main__':
         sanity_input_size=512,
         verbose=True,
     )
+    model.to(device)
+    model.eval()
     print(f"Model loaded on device: {device}")
 
     # Initialize counters
@@ -78,7 +81,7 @@ if __name__ == '__main__':
             if category not in class_pck_image:
                 class_pck_image[category] = {
                     'total_image': 0,
-                    'image_value_sum_0_05': 0, # Accumulatore per le medie delle singole immagini
+                    'image_value_sum_0_05': 0, 
                     'image_value_sum_0_1': 0,
                     'image_value_sum_0_2': 0
                 }
@@ -88,10 +91,10 @@ if __name__ == '__main__':
             img_correct_keypoints_0_1 = 0
             img_correct_keypoints_0_2 = 0
 
-            src_img = data['src_img'].to(device) # torch.Size([1, 3, 512, 512])
+            src_img = data['src_img'].to(device) 
             trg_img = data['trg_img'].to(device)
             
-            # We pass the PADDED images
+            
             dict_src = model.forward_features(src_img) # Python dictionary. 
             dict_trg = model.forward_features(trg_img)
             
@@ -111,7 +114,7 @@ if __name__ == '__main__':
         
             bbox = data['trg_bbox'][0] 
 
-            # Estraiamo i 4 valori scalari per l'immagine corrente (indice batch 0)
+            # extract bbox coordinates
             x_min = bbox[0].item()
             y_min = bbox[1].item()
             x_max = bbox[2].item()
@@ -119,7 +122,7 @@ if __name__ == '__main__':
 
             w_bbox = x_max - x_min
             h_bbox = y_max - y_min
-            # La dimensione di riferimento è il lato massimo della BBox
+            # then get the max side
             max_side = max(w_bbox, h_bbox)
             
             # Calcoliamo le 3 soglie in pixel
@@ -127,7 +130,7 @@ if __name__ == '__main__':
             thr_10 = max_side * 0.10
             thr_20 = max_side * 0.20
             # Get threshold value
-            #         
+                  
             for n_keypoint, keypoint_src in enumerate(kps_list_src):
 
                 if valid_mask[n_keypoint] == 0:
@@ -183,8 +186,8 @@ if __name__ == '__main__':
                 if is_correct_05: img_correct_keypoints_0_05 += 1
                 if is_correct_10: img_correct_keypoints_0_1 += 1
                 if is_correct_20: img_correct_keypoints_0_2 += 1
-            
-            # AGGIORNAMENTO DATI CATEGORIA (PCK PER IMAGE)
+
+            # Calculate Image-level Accuracy
             if img_tot_keypoints > 0:
                 image_accuracy_0_05 = img_correct_keypoints_0_05 / img_tot_keypoints
                 image_accuracy_0_1 = img_correct_keypoints_0_1 / img_tot_keypoints

@@ -5,9 +5,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import sys
-# NUOVI IMPORT NECESSARI
 from safetensors.torch import load_file
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, PeftModel
 from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,7 +22,7 @@ if __name__ == '__main__':
         print("Error: Dataset not found. Please run utils/setup_data.py or check data location.")
         sys.exit(1)
 
-    base_dir = os.path.join(data_root, 'SPair-71k','Spair-71k')
+    base_dir = os.path.join(data_root, 'SPair-71k')
     pair_ann_path = os.path.join(base_dir, 'PairAnnotation')
     layout_path = os.path.join(base_dir, 'Layout')
     image_path = os.path.join(base_dir, 'JPEGImages')
@@ -46,41 +45,30 @@ if __name__ == '__main__':
     print("\n--- 3. Loading Model ---")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dinov3_dir = Path("/content/dinov3") if Path("/content/dinov3").exists() else Path("third_party/dinov3")
-    weights_path = Path("checkpoints/dinov3/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth")
-    model = load_dinov3_backbone(
+    project_root = Path(__file__).resolve().parents[1]
+    weights_path = project_root / "checkpoints" / "dinov3" / "dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth"
+    base_model = load_dinov3_backbone(
         dinov3_dir=dinov3_dir,
         weights_path=weights_path,
         device=device,
         sanity_input_size=512,
         verbose=True,
     )
+
     print("--- 4. Loading LoRA Weights and Preparing Model ---")
-    lora_config = LoraConfig(
-        r=16, 
-        lora_alpha=32, 
-        target_modules=["qkv"], 
-        lora_dropout=0.1, # serve per la config
-        bias="none"
-    )
-    model = get_peft_model(model, lora_config)
+    project_root = Path(__file__).resolve().parents[1]
+    adapter_dir = project_root / "checkpoints" / "dinov3" / "best_model_LoRA"
 
-    checkpoint_path = "checkpoints/dinov3/best_model_LoRA.pth"
-    if os.path.exists(checkpoint_path):
-        print(f"Loading LoRA weights from: {checkpoint_path}")
-        lora_config = LoraConfig(
-            r=4,
-            target_modules=["qkv", "k_proj", "v_proj", "o_proj", "down_proj", "up_proj"],
-            task_type="CAUSAL_LM",
-        )
-        model = get_peft_model(model, lora_config)
-        state_dict = load_file(checkpoint_path, device=device)
-        model.load_state_dict(state_dict, strict=False)
-        print("LoRA weights loaded successfully.")
-    else:
-        print(f"LoRA checkpoint not found at: {checkpoint_path}. Proceeding without LoRA weights.")
+    model = PeftModel.from_pretrained(base_model, adapter_dir).to(device).eval()
 
-    model.to(device)
-    model.eval()
+    print("adapter_dir exists:", adapter_dir.exists(), "is_dir:", adapter_dir.is_dir())
+    print("adapter contents:", [p.name for p in adapter_dir.iterdir()])
+
+    lora_params = [n for n,_ in model.named_parameters() if "lora" in n.lower()]
+    print("Num LoRA params:", len(lora_params))
+    print("First LoRA params:", lora_params[:6])
+
+    model.to(device).eval()
     print(f"Model loaded on: {device}")
 
     # Initialize counters
@@ -102,7 +90,7 @@ if __name__ == '__main__':
             if category not in class_pck_image:
                 class_pck_image[category] = {
                     'total_image': 0,
-                    'image_value_sum_0_05': 0, # Accumulatore per le medie delle singole immagini
+                    'image_value_sum_0_05': 0, # Sum of accuracies for images in this category
                     'image_value_sum_0_1': 0,
                     'image_value_sum_0_2': 0
                 }
@@ -111,7 +99,7 @@ if __name__ == '__main__':
             img_correct_keypoints_0_1 = 0
             img_correct_keypoints_0_2 = 0
 
-            src_img = data['src_img'].to(device) # torch.Size([1, 3, 512, 512])
+            src_img = data['src_img'].to(device) 
             trg_img = data['trg_img'].to(device)
             
             # We pass the PADDED images
@@ -134,7 +122,7 @@ if __name__ == '__main__':
         
             bbox = data['trg_bbox'][0] 
 
-            # Estraiamo i 4 valori scalari per l'immagine corrente (indice batch 0)
+            # extract bbox coordinates
             x_min = bbox[0].item()
             y_min = bbox[1].item()
             x_max = bbox[2].item()
@@ -142,15 +130,15 @@ if __name__ == '__main__':
 
             w_bbox = x_max - x_min
             h_bbox = y_max - y_min
-            # La dimensione di riferimento è il lato massimo della BBox
+            # then get the max side
             max_side = max(w_bbox, h_bbox)
             
-            # Calcoliamo le 3 soglie in pixel
+            # Calculate thresholds
             thr_05 = max_side * 0.05
             thr_10 = max_side * 0.10
             thr_20 = max_side * 0.20
             # Get threshold value
-            #         
+                  
             for n_keypoint, keypoint_src in enumerate(kps_list_src):
 
                 if valid_mask[n_keypoint] == 0:
@@ -172,7 +160,7 @@ if __name__ == '__main__':
                 # Extract Vector
                 source_vec = feats_src[0, patch_index_src, :]
 
-                # Cosine Similarity shape [1369]
+                # Cosine Similarity shape [1024]
                 similarity_map = torch.cosine_similarity(source_vec, feats_trg[0], dim=-1)
 
                 sim_2d = similarity_map.view(h_grid, w_grid)
@@ -207,7 +195,7 @@ if __name__ == '__main__':
                 if is_correct_10: img_correct_keypoints_0_1 += 1
                 if is_correct_20: img_correct_keypoints_0_2 += 1
             
-            # AGGIORNAMENTO DATI CATEGORIA (PCK PER IMAGE)
+            # Calculate Image-level Accuracy
             if img_tot_keypoints > 0:
                 image_accuracy_0_05 = img_correct_keypoints_0_05 / img_tot_keypoints
                 image_accuracy_0_1 = img_correct_keypoints_0_1 / img_tot_keypoints

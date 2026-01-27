@@ -151,11 +151,11 @@ if __name__ == '__main__':
         dataset = SPairDataset(pair_ann_path, layout_path, image_path, 'large', 0.05, 'trn')
         loader = DataLoader(dataset, batch_size=6, shuffle=True)
         batch = next(iter(loader))
-        print(f"Batch BBox Shape: {batch['trg_bbox'].shape}") # Should be [6, 4]
-        print(f"Sample BBox: {batch['trg_bbox'][0]}")         # Should look like [x1, y1, x2, y2]
-        print(f"Batch Image Shape: {batch['src_img'].shape}") # Should be [4, 3, 518, 518]
-        print(f"Batch Image Shape: {batch['trg_img'].shape}") # Should be [4, 3, 518, 518]
-        print(f"Batch Keypoints: {batch['src_kps'].shape}")   # Should be [4, 40, 2]
+        print(f"Batch BBox Shape: {batch['trg_bbox'].shape}") 
+        print(f"Sample BBox: {batch['trg_bbox'][0]}")         
+        print(f"Batch Image Shape: {batch['src_img'].shape}") 
+        print(f"Batch Image Shape: {batch['trg_img'].shape}") 
+        print(f"Batch Keypoints: {batch['src_kps'].shape}")   
     else:
         print(f"Path not found: {base_dir}")
         print("Run 'utils/data_setup.py' first!")

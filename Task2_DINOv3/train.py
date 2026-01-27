@@ -13,14 +13,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from data.dataset_DINOv3_train import SPairDataset
 from utils.setup_data_DINOv3 import setup_data
 from models.dinov3.model_DINOv3 import load_dinov3_backbone
-from Task2_DINOv3.loss_DINOv3 import InfoNCELoss
+from Task2_DINOv3.loss import InfoNCELoss
 
 data_root = setup_data() 
 if data_root is None: 
-    print("Error: Dataset not found. Please run utils/setup_data.py or check data location.")
+    print("Error: Dataset not found. Please run utils/setup_data_DINOv3.py or check data location.")
     sys.exit(1)
 
-base_dir = os.path.join(data_root, 'SPair-71k','Spair-71k') 
+base_dir = os.path.join(data_root, 'SPair-71k') 
 pair_ann_path = os.path.join(base_dir, 'PairAnnotation')
 layout_path = os.path.join(base_dir, 'Layout')
 image_path = os.path.join(base_dir, 'JPEGImages')
@@ -63,24 +63,13 @@ def seed_everything(seed=42):
     print(f">>> SEED SET TO {seed} <<<")
     
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-print(f"Model loaded on device: {device}")
-
-def seed_everything(seed=42):
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    print(f">>> SEED SET TO {seed} <<<")
-
-def fine_tuning(model, epochs, lr, w_decay, n_layers):
+def fine_tuning(epochs, lr, w_decay, n_layers):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     seed_everything(42)
     dinov3_dir = Path("/content/dinov3") if Path("/content/dinov3").exists() else Path("third_party/dinov3")
     weights_path = Path("checkpoints/dinov3/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth")
+    if not weights_path.exists():
+        raise FileNotFoundError(f"Missing weights: {weights_path.resolve()}")
     model = load_dinov3_backbone(
             dinov3_dir=dinov3_dir,
             weights_path=weights_path,
@@ -196,9 +185,9 @@ def fine_tuning(model, epochs, lr, w_decay, n_layers):
             print(f"Epoch [{epoch+1}/{num_epochs}] Avg Validation Loss: {avg_val_loss:.4f}")
             if avg_val_loss < best_val_loss:
                 best_val_loss=avg_val_loss
-                os.makedirs("checkpoints", exist_ok=True)
-                # Save the weights
-                torch.save(model.state_dict(), ".checkpoints/dinov3/best_model_dinov3-{n_layers}.pth")
+                save_dir = Path(__file__).resolve().parents[1] / "checkpoints" / "dinov3"
+                save_dir.mkdir(parents=True, exist_ok=True)
+                torch.save(model.state_dict(), save_dir / "best_model.pth")
                 print(f"--> New Best Model Saved! (Loss: {best_val_loss:.4f})")
 
 if __name__ == "__main__":
