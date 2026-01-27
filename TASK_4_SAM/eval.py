@@ -3,15 +3,13 @@ import sys
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-import numpy as np
-import gc
-from data.dataset import SPairDataset
 from segment_anything import sam_model_registry
-from utils.common import download_sam_model
 from peft import PeftModel
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from TASK_1_SAM.eval import evaluate_pck
+from data.dataset import SPairDataset
+from utils.common import download_sam_model
 
 if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"

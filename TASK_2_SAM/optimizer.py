@@ -49,3 +49,6 @@ def setup_optimizer_v2(model):
             "lr": base_lr,
             "weight_decay": wd
         })
+        
+    optimizer = AdamW(params, betas=(0.9, 0.999))
+    return optimizer

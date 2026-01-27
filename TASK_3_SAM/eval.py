@@ -156,7 +156,7 @@ if __name__ == "__main__":
 
     dataset_root = 'dataset/SPair-71k'
     checkpoint_dir = 'checkpoints'
-    model_name = 'sam_tuned_best.pth' # Il modello da testare
+    model_name = 'best_sam_encoder_final.pth' # Il modello da testare
 
     pair_ann_path = os.path.join(dataset_root, 'PairAnnotation')
     layout_path = os.path.join(dataset_root, 'Layout')
