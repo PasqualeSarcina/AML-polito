@@ -14,22 +14,9 @@ from segment_anything import sam_model_registry
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from TASK_2_SAM.setup import DenseCrossEntropyLoss
+from TASK_2_SAM.Loss import DenseCrossEntropyLoss
 from data.dataset import SPairDataset
 from utils.common import download_sam_model
-
-def seed_everything(seed=42):
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False 
-    print(f">>> 🔒 SEED FISSATO A {seed} <<<")
-
-
     
 def seed_everything(seed=42):
     random.seed(seed)

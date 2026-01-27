@@ -14,7 +14,8 @@ from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from TASK_2_SAM.setup import MyCrossEntropyLoss, configure_model
+from TASK_2_SAM.loss import DenseCrossEntropyLoss
+from TASK_2_SAM.configure_layers import configure_model
 from utils.geometry import extract_features
 from utils.common import download_sam_model, plot_training_results
 from data.dataset import SPairDataset
@@ -35,22 +36,23 @@ def seed_everything(seed=42):
 
 def train_finetune(model, train_loader, val_loader, save_dir, n_layers, run_id, epochs=5, lr=1e-5, accumulation_steps=8):
     scaler = GradScaler()
-    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
+    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
+                            lr=lr)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, 
-        max_lr=5e-5, # Puoi osare un LR più alto con LoRA e OneCycle
-        steps_per_epoch=len(train_loader) // accumulation_steps,
-        epochs=2,
-        pct_start=0.3 # 10% di warmup
+        max_lr=1e-4, # Puoi osare un LR più alto con LoRA e OneCycle
+        steps_per_epoch=len(train_loader),
+        epochs=epochs,
+        pct_start=0.1 # 10% di warmup
     )
-    criterion = MyCrossEntropyLoss(temperature=0.1)
+    criterion = DenseCrossEntropyLoss(temperature=0.1)
     model.train() 
     
     best_val_loss = float('inf') #TENIAMO TRACCIA DEL MIGLIOR MODELLO
     train_loss_history = []
     val_loss_history = []
 
-    print(f"🚀 Inizio Training per {epochs} epoche...")
+    print(f"Inizio Training per {epochs} epoche...")
     
     for epoch in range(epochs):
         train_loss = 0
@@ -153,25 +155,21 @@ def train_finetune(model, train_loader, val_loader, save_dir, n_layers, run_id, 
 if __name__ == "__main__":
     seed_everything(42)
 
-    # SETUP PATHS
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
     dataset_root = 'dataset/SPair-71k'
     checkpoint_dir = 'checkpoints'
     results_dir = 'results'
 
-    # CONFIGURA DEVICE
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-
-    # DOWNLOAD & LOAD MODEL
     ckpt_path = download_sam_model(checkpoint_dir)
     sam = sam_model_registry["vit_b"](checkpoint=ckpt_path)
     sam.to(device)
 
     # CONFIGURA MODELLO PER FINETUNING
-    n_layers = 1
+    n_layers = 2
     n_epochs = 5  
     configure_model(sam, unfreeze_last_n_layers=n_layers)
 
-    # DATASET E DATALOADER
     pair_ann_path = os.path.join(dataset_root, 'PairAnnotation')
     layout_path = os.path.join(dataset_root, 'Layout')
     image_path = os.path.join(dataset_root, 'JPEGImages')
@@ -194,7 +192,7 @@ if __name__ == "__main__":
 
     train_hist, val_hist = train_finetune(
         sam, train_dataloader, val_dataloader, checkpoint_dir,
-        n_layers, run_id, n_epochs, lr=1e-5, accumulation_steps=16)
+        n_layers, run_id, n_epochs, lr=1e-5, accumulation_steps=8)
     
     # PLOTTAGGIO RISULTATI
     plot_training_results(train_hist, val_hist, results_dir, n_layers, run_id)

@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import numpy as np
-from tqdm import tqdm # Per la barra di caricamento
+from tqdm import tqdm
 import gc
 from collections import defaultdict
 
@@ -39,8 +39,6 @@ def evaluate_pck(model, dataloader, device, alpha=0.1):
     category_stats = defaultdict(lambda: {'total': 0, 'c_05': 0, 'c_10': 0, 'c_20': 0})
 
     print(f"Inizio valutazione su {len(dataloader)} coppie...")
-
-    error_count = 0
 
     for i, batch in enumerate(tqdm(dataloader)):
         src_img = batch['src_img'].to(device)
@@ -156,7 +154,6 @@ def evaluate_pck(model, dataloader, device, alpha=0.1):
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    #PATHS
     dataset_root = 'dataset/SPair-71k'
     checkpoint_dir = 'checkpoints'
     model_name = 'sam_tuned_1layer.pth' # Il modello da testare
@@ -168,11 +165,9 @@ if __name__ == "__main__":
     test_dataset = SPairDataset(pair_ann_path, layout_path, image_path, dataset_size='large', pck_alpha=0.1, datatype='test')
     test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=4)
 
-    #LOAD MODEL
     base_ckpt = download_sam_model(checkpoint_dir)
     sam = sam_model_registry["vit_b"](checkpoint=base_ckpt)
     sam.to(device)
     
-    # VALUTAZIONE
     evaluate_pck(sam, test_dataloader, device)
     

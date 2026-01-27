@@ -19,7 +19,7 @@ from utils.common import download_sam_model
 def evaluate_pck(model, dataloader, device, alpha=0.1):
     model.eval()
     
-    #PULIZIA MEMORIA!!
+    #PULIZIA MEMORIA
     torch.cuda.empty_cache()
     gc.collect()
 
@@ -156,10 +156,9 @@ def evaluate_pck(model, dataloader, device, alpha=0.1):
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    #PATHS
     dataset_root = 'dataset/SPair-71k'
     checkpoint_dir = 'checkpoints'
-    model_name = 'sam_tuned_1layer.pth' # Il modello da testare
+    model_name = 'sam_tuned_best.pth' # Il modello da testare
 
     pair_ann_path = os.path.join(dataset_root, 'PairAnnotation')
     layout_path = os.path.join(dataset_root, 'Layout')
@@ -168,7 +167,6 @@ if __name__ == "__main__":
     test_dataset = SPairDataset(pair_ann_path, layout_path, image_path, dataset_size='large', pck_alpha=0.1, datatype='test')
     test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=4)
 
-    #LOAD MODEL
     base_ckpt = download_sam_model(checkpoint_dir)
     sam = sam_model_registry["vit_b"](checkpoint=base_ckpt)
 
@@ -176,12 +174,11 @@ if __name__ == "__main__":
     tuned_path = os.path.join(checkpoint_dir, model_name)
     if os.path.exists(tuned_path):
         print(f"Caricamento pesi custom: {tuned_path}")
-        sam.load_state_dict(torch.load(tuned_path, map_location=device), strict=True)
+        sam.image_encoder.load_state_dict(torch.load(tuned_path, map_location=device), strict=True)
     else:
-        print(f"❌ ERRORE: Il file {tuned_path} non esiste.")
+        print(f"ERRORE: Il file {tuned_path} non esiste.")
 
     sam.to(device)
     
-    # VALUTAZIONE
     evaluate_pck(sam, test_dataloader, device)
     
