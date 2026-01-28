@@ -1,7 +1,11 @@
+dataset/*
+!dataset/.gitkeep
+*.zip
+*.tar
+*.tar.gz
 
 # Ignore model checkpoints
 checkpoints/
-models/*.pth
 
 # Ignore model checkpoints
 models/dinov2/task2_dinov2/checkpoints/
