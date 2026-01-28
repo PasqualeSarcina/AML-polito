@@ -159,7 +159,7 @@ if __name__ == "__main__":
     sam.to(device)
 
     n_layers = 2
-    n_epochs = 5  
+    n_epochs = 4  
     configure_model(sam, unfreeze_last_n_layers=n_layers)
 
     pair_ann_path = os.path.join(dataset_root, 'PairAnnotation')
