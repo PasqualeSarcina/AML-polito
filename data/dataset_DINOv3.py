@@ -8,32 +8,26 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 
-def get_transforms(mode='train', img_size=512):
+def get_transforms(mode: str, img_size: int = 512):
     mean = (0.485, 0.456, 0.406)
-    std = (0.229, 0.224, 0.225)
-    bbox_params = A.BboxParams(format='pascal_voc', label_fields=['class_labels'])
-    if mode == 'train':
-        return A.Compose([
-            # Geometric Augmentations (Hard - Moves Keypoints)
-            A.Resize(height=img_size, width=img_size),
-            A.HorizontalFlip(p=0.5),
-            A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=15, p=0.5),
-            
-            # Pixel Augmentations (Safe - Colors only)
+    std  = (0.229, 0.224, 0.225)
+    tfms = [
+        A.Resize(height=img_size, width=img_size),
+    ]
+    # Augmentantion only in training mode
+    if mode == "train":
+        tfms += [
             A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.5),
             A.GaussianBlur(p=0.1),
-            
-            # Normalization & Conversion
-            A.Normalize(mean=mean, std=std),
-            ToTensorV2(), 
-        ], keypoint_params=A.KeypointParams(format='xy', remove_invisible=False), bbox_params=bbox_params)
-    
-    else:
-        return A.Compose([
-            A.Resize(height=img_size, width=img_size),
-            A.Normalize(mean=mean, std=std),
-            ToTensorV2(), 
-        ], keypoint_params=A.KeypointParams(format='xy', remove_invisible=False), bbox_params=bbox_params)
+        ]
+    tfms += [
+        A.Normalize(mean=mean, std=std),
+        ToTensorV2(),
+    ]
+    return A.Compose(
+        tfms,
+        keypoint_params=A.KeypointParams(format="xy", remove_invisible=False),
+    )
 
 # --- 2. Simple Image Reader ---
 def read_img(path):
@@ -80,27 +74,28 @@ class SPairDataset(Dataset):
         trg_path = os.path.join(self.image_path, category, annotation['trg_imname'])
 
         # 2. Load Images
-        src_img_raw = read_img(src_path)
-        trg_img_raw = read_img(trg_path)
+        src_img = read_img(src_path)
+        trg_img = read_img(trg_path)
+
+        H_img, W_img = trg_img.shape[:2]
+        H0, W0 = annotation["trg_imsize"][:2]
+       
+
 
         # 3. Get Keypoints
         src_kps = np.array(annotation['src_kps']).astype(np.float32)
         trg_kps = np.array(annotation['trg_kps']).astype(np.float32)
 
         # 4. Apply Transforms
-        src_aug = self.transform(image=src_img_raw, keypoints=src_kps, bboxes=[], class_labels=[] )
-        src_tensor = src_aug['image']
-        src_kps_aug = np.array(src_aug['keypoints'])
-        
-        trg_aug = self.transform(image=trg_img_raw, keypoints=trg_kps, bboxes=[trg_bbox_raw], class_labels=["target_obj"] )
-        trg_tensor = trg_aug['image']
-        trg_kps_aug = np.array(trg_aug['keypoints'])
+        src_aug = self.transform(image=src_img, keypoints=src_kps)
+        trg_aug = self.transform(image=trg_img, keypoints=trg_kps)
 
-        if len(trg_aug['bboxes']) > 0:
-            trg_bbox_resized = trg_aug['bboxes'][0]
-        else:
-            # Handle rare case where augmentation might push bbox out of frame (unlikely with Resize)
-            trg_bbox_resized = [0, 0, 512, 512]
+        src_tensor = src_aug['image']
+        trg_tensor = trg_aug['image']
+        src_kps_aug = np.array(src_aug["keypoints"], dtype=np.float32)
+        trg_kps_aug = np.array(trg_aug["keypoints"], dtype=np.float32)
+        
+        
 
         # 5. Padding Logic
         MAX_KPS = 40 
@@ -117,9 +112,25 @@ class SPairDataset(Dataset):
         src_vis = self._check_visibility(src_kps_padded, 512, 512)
         trg_vis = self._check_visibility(trg_kps_padded, 512, 512)
         
+
         valid_mask = np.zeros(MAX_KPS, dtype=np.float32)
-        common_len = min(n_src, n_trg)
-        valid_mask[:common_len] = src_vis[:common_len] * trg_vis[:common_len]
+        common = min(n_src, n_trg)
+        if common > 0:
+            valid_mask[:common] = src_vis[:common] * trg_vis[:common]
+
+        # --- Scale target bbox to 512x512 ---
+        H0, W0 = trg_img.shape[:2]   # usa l'immagine letta, non trg_imsize
+        H1, W1 = 512, 512
+
+        x1, y1, x2, y2 = annotation["trg_bndbox"]
+
+        sx = W1 / W0
+        sy = H1 / H0
+
+        trg_bbox_resized = np.array([x1*sx, y1*sy, x2*sx, y2*sy], dtype=np.float32)
+        trg_bbox_resized[0::2] = np.clip(trg_bbox_resized[0::2], 0, 512)  # x1,x2
+        trg_bbox_resized[1::2] = np.clip(trg_bbox_resized[1::2], 0, 512)  # y1,y2
+
 
         return {
             'src_img': src_tensor,
@@ -137,6 +148,7 @@ class SPairDataset(Dataset):
         vis_x = (x >= 0) & (x < w)
         vis_y = (y >= 0) & (y < h)
         return (vis_x & vis_y).astype(np.float32)
+
 
 if __name__ == '__main__':
     current_dir = os.path.dirname(os.path.abspath(__file__))

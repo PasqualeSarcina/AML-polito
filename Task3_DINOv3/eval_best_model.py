@@ -201,11 +201,12 @@ if __name__ == '__main__':
 
                 sim_2d = similarity_map.view(h_grid, w_grid)
 
-                y_col, x_row = soft_argmax_window(sim_map_2d=sim_2d)
+                y_hat, x_hat = soft_argmax_window(sim_2d)
                                 
                 # The logic remains: Coordinate * stride + offset
-                x_pred_pixel = x_row * patch_size + (patch_size // 2)
-                y_pred_pixel = y_col * patch_size + (patch_size // 2)
+                x_pred_pixel = x_hat * patch_size + (patch_size // 2)
+                y_pred_pixel = y_hat * patch_size + (patch_size // 2)
+
 
                 # Ground Truth Check
                 gt_x = trg_kps_gt[n_keypoint, 0].item()

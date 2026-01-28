@@ -33,8 +33,8 @@ class InfoNCELoss(nn.Module):
         logits = torch.bmm(desc_src, feat_trg_flat) / self.temperature
 
         # --- 3. Create Ground Truth Labels ---
-        trg_x_grid = (kps_trg[:, :, 0] / patch_size).round().long()
-        trg_y_grid = (kps_trg[:, :, 1] / patch_size).round().long()
+        trg_x_grid = (kps_trg[:, :, 0].floor() / patch_size).long()   # oppure kps_trg.long() // patch_size
+        trg_y_grid = (kps_trg[:, :, 1].floor() / patch_size).long()
 
         # Clamp to avoid crashing if point is slightly outside
         trg_x_grid = trg_x_grid.clamp(0, W - 1)
@@ -56,14 +56,15 @@ class InfoNCELoss(nn.Module):
         return final_loss
 
     def _normalize_coords(self, kps, H, W, patch_size):
-        # Map pixel coords [0, 512] to [-1, 1] for grid_sample
-        # Feature map size is 32x32, representing 512x512 pixels
+    # kps: [B,K,2] in pixel (0..511)
+    # convert pixel -> patch coords (float)
+        x = kps[:, :, 0] / patch_size  # [0..W)
+        y = kps[:, :, 1] / patch_size  # [0..H)
 
-        # X: (x / width_pixels) * 2 - 1
-        # Y: (y / height_pixels) * 2 - 1
-        img_size = H * patch_size # 32 * 16 = 512
+        # normalize to [-1, 1] for grid_sample over feature map size W,H
+        x = (x / (W - 1)) * 2 - 1
+        y = (y / (H - 1)) * 2 - 1
 
-        norm_kps = kps.clone()
-        norm_kps[:, :, 0] = (norm_kps[:, :, 0] / (img_size - 1)) * 2 - 1
-        norm_kps[:, :, 1] = (norm_kps[:, :, 1] / (img_size - 1)) * 2 - 1
-        return norm_kps.unsqueeze(2)
+        grid = torch.stack([x, y], dim=-1)  # [B,K,2] with order (x,y)
+        return grid.unsqueeze(2)            # [B,K,1,2]
+        

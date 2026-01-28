@@ -10,11 +10,3 @@ Epoch 2/5[Validation]: Avg Validation Loss: 2.6300
 Epoch 3/5[Training]: Avg Training Loss: 1.8327
 --> Learning Rate for next epoch: 0.00003455
 Epoch 3/5[Validation]: Avg Validation Loss: 2.7220
-
-Epoch 4/5[Training]: Avg Training Loss: 1.7003
---> Learning Rate for next epoch: 0.00000955
-Epoch 4/5[Validation]: Avg Validation Loss: 2.7889
-
-Epoch 5/5[Training]: Avg Training Loss: 1.6321
---> Learning Rate for next epoch: 0.00000000
-Epoch 5/5[Validation]: Avg Validation Loss: 2.8089

@@ -11,7 +11,7 @@ from peft import LoraConfig, get_peft_model
 from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from data.dataset_DINOv3_train import SPairDataset
+from data.dataset_DINOv3 import SPairDataset
 from utils.setup_data_DINOv3 import setup_data
 from models.dinov3.model_DINOv3 import load_dinov3_backbone
 from Task2_DINOv3.loss import InfoNCELoss
@@ -77,7 +77,6 @@ def fine_tuning(epochs, lr, w_decay):
             sanity_input_size=512,
             verbose=True,
         )
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
   
     lora_config = LoraConfig(

@@ -10,7 +10,7 @@ from tqdm import tqdm
 from pathlib import Path
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from data.dataset_DINOv3_train import SPairDataset
+from data.dataset_DINOv3 import SPairDataset
 from utils.setup_data_DINOv3 import setup_data
 from models.dinov3.model_DINOv3 import load_dinov3_backbone
 from Task2_DINOv3.loss import InfoNCELoss
@@ -86,8 +86,9 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
         print(model.norm)
     else:
         print("don't exist")
+    
     criterion = InfoNCELoss(temperature=0.07).to(device)
-
+    
     for param in model.parameters(): param.requires_grad = False
     for block in model.blocks[-n_layers:]:
         for param in block.parameters(): param.requires_grad = True

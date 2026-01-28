@@ -12,12 +12,12 @@ exp1_val   = [2.6616, 2.6300, 2.7220]
 
 
 # EXPERIMENT 2: (LR=1e-5 Batch Size=8)
-exp2_train = [3.5391, ]
-exp2_val   = [3.1845, ]
+exp2_train = [3.5391, 2.9895, 2.8719]
+exp2_val   = [3.1845, 3.0378, 3.0072]
 
 # EXPERIMENT 3: (LR=1e-5 Batch Size=4)
-exp3_train = []
-exp3_val   = []
+exp3_train = [3.3736, 2.8653, 2.7487]
+exp3_val   = [3.0912, 2.9674, 2.9280]
 
 # --- PLOTTING ---
 
