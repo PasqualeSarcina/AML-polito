@@ -44,8 +44,6 @@ if __name__ == '__main__':
     test_dataloader = DataLoader(test_dataset, batch_size=1, num_workers=0, shuffle=False)
     print(f"Test Set Loaded: {len(test_dataset)} images.")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     print("\n--- 3. Loading DINOv3 Model ---")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -166,10 +164,10 @@ with torch.no_grad(): # Disable gradients
 
         w_bbox = x_max - x_min
         h_bbox = y_max - y_min
-        # La dimensione di riferimento è il lato massimo della BBox
+        
         max_side = max(w_bbox, h_bbox)
 
-        # Calcoliamo le 3 soglie in pixel
+        # eval thresholds
         thr_05 = max_side * 0.05
         thr_10 = max_side * 0.10
         thr_20 = max_side * 0.20
@@ -196,7 +194,7 @@ with torch.no_grad(): # Disable gradients
             # Extract Vector
             source_vec = feats_src[0, patch_index_src, :]
 
-            # Cosine Similarity shape [1369]
+            # Cosine Similarity shape [1024]
             similarity_map = torch.cosine_similarity(source_vec, feats_trg[0], dim=-1)
             # Prediction
             patch_idx_spatial = torch.argmax(similarity_map).item()

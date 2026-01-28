@@ -152,7 +152,7 @@ if __name__ == '__main__':
                 # Extract Vector
                 source_vec = feats_src[0, patch_index_src, :]
 
-                # Cosine Similarity shape [1369]
+                # Cosine Similarity shape [1024]
                 similarity_map = torch.cosine_similarity(source_vec, feats_trg[0], dim=-1)
 
                 sim_2d = similarity_map.view(h_grid, w_grid)

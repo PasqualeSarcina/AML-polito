@@ -1,6 +1,5 @@
 import torch
 
-
 def soft_argmax_window(sim_map_2d, window_radius=3, temperature=20):
 
     H, W = sim_map_2d.shape

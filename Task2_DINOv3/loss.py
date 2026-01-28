@@ -20,8 +20,11 @@ class InfoNCELoss(nn.Module):
 
 
         # --- 1. Extract Source Descriptors ---
+        # We sample the EXACT vector at the source keypoint (x, y)
+        # Normalize coords to [-1, 1] for grid_sample
         src_norm = self._normalize_coords(kps_src, H, W, patch_size) # [B, K, 1, 2]
 
+        # Sample: [B, C, H, W] + [B, K, 1, 2] -> [B, C, K, 1]
         desc_src = F.grid_sample(feat_src, src_norm, align_corners=True, mode='bilinear')
         desc_src = desc_src.squeeze(-1).permute(0, 2, 1) # [B, K, C]
 
@@ -30,16 +33,21 @@ class InfoNCELoss(nn.Module):
         feat_trg_flat = F.normalize(feat_trg.flatten(2), dim=1) # [B, C, N_patches]
 
         # --- 2. Calculate Similarity Heatmap ---
+        # "Compare every Source Point against ALL Target Patches"
+        # [B, K, C] @ [B, C, 1024] -> [B, K, 1024]
         logits = torch.bmm(desc_src, feat_trg_flat) / self.temperature
 
         # --- 3. Create Ground Truth Labels ---
-        trg_x_grid = (kps_trg[:, :, 0].floor() / patch_size).long()   # oppure kps_trg.long() // patch_size
-        trg_y_grid = (kps_trg[:, :, 1].floor() / patch_size).long()
+        # "Which target patch index (0-1204) contains the target keypoint?"
+        trg_x_grid = (kps_trg[:, :, 0] / patch_size).round().long()
+        trg_y_grid = (kps_trg[:, :, 1] / patch_size).round().long()
 
         # Clamp to avoid crashing if point is slightly outside
         trg_x_grid = trg_x_grid.clamp(0, W - 1)
         trg_y_grid = trg_y_grid.clamp(0, H - 1)
 
+        # Convert Grid (x,y) to Flat Index (0 to 1204)
+        # Formula: y * Width + x
         target_classes = (trg_y_grid * W) + trg_x_grid # [B, K]
 
         # --- 4. Calculate Loss ---
@@ -56,15 +64,14 @@ class InfoNCELoss(nn.Module):
         return final_loss
 
     def _normalize_coords(self, kps, H, W, patch_size):
-    # kps: [B,K,2] in pixel (0..511)
-    # convert pixel -> patch coords (float)
-        x = kps[:, :, 0] / patch_size  # [0..W)
-        y = kps[:, :, 1] / patch_size  # [0..H)
+        # Map pixel coords [0, 512] to [-1, 1] for grid_sample
+        # Feature map size is 32x32, representing 512x512 pixels
 
-        # normalize to [-1, 1] for grid_sample over feature map size W,H
-        x = (x / (W - 1)) * 2 - 1
-        y = (y / (H - 1)) * 2 - 1
+        # X: (x / width_pixels) * 2 - 1
+        # Y: (y / height_pixels) * 2 - 1
+        img_size = H * patch_size # 32 * 16 = 512
 
-        grid = torch.stack([x, y], dim=-1)  # [B,K,2] with order (x,y)
-        return grid.unsqueeze(2)            # [B,K,1,2]
-        
+        norm_kps = kps.clone()
+        norm_kps[:, :, 0] = (norm_kps[:, :, 0] / (img_size - 1)) * 2 - 1
+        norm_kps[:, :, 1] = (norm_kps[:, :, 1] / (img_size - 1)) * 2 - 1
+        return norm_kps.unsqueeze(2)

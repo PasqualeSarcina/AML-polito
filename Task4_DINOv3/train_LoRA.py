@@ -191,7 +191,9 @@ def fine_tuning(epochs, lr, w_decay):
             print(f"Epoch [{epoch+1}/{num_epochs}] Avg Validation Loss: {avg_val_loss:.4f}")
             if avg_val_loss < best_val_loss:
                 best_val_loss=avg_val_loss
+                
                 project_root = Path(__file__).resolve().parents[1]   # AML-polito
+
                 save_dir = project_root / "checkpoints" / "dinov3"
                 save_dir.mkdir(parents=True, exist_ok=True)
 
