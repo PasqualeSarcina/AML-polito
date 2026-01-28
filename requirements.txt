@@ -14,3 +14,4 @@ transformers
 xformers
 torchmetrics
 termcolor
+peft
