@@ -1,86 +1,153 @@
+
 import os
 import sys
 import torch
+import torch.optim as optim
 from torch.utils.data import DataLoader
+from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
 from segment_anything import sam_model_registry
+import random
+import numpy as np
+import json
+from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from TASK_2_SAM.optimizer import setup_optimizer_v2
-from TASK_2_SAM.loss import SoftSemanticLoss
+from TASK_2_SAM.loss import DenseCrossEntropyLoss
 from TASK_2_SAM.configure_layers import configure_model
+from utils.geometry import extract_features
+from utils.common import download_sam_model, plot_training_results
 from data.dataset import SPairDataset
-from utils.common import download_sam_model
 
-def train_one_epoch(model, dataloader, optimizer, criterion, device, lr_scheduler):
-    model.train()
-    total_loss = 0
-    pbar = tqdm(enumerate(dataloader), total=len(dataloader), desc="Training")
+# ==========================================
+# TRAINING LOOP
+# ==========================================
+def seed_everything(seed=42):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False 
+    print(f">>> 🔒 SEED FISSATO A {seed} <<<")
 
-    for batch_idx, batch in pbar:
-        optimizer.zero_grad()
-        # Spostiamo tutto su device
-        src_img = batch['src_img'].to(device)
-        trg_img = batch['trg_img'].to(device)
-        src_kps = batch['src_kps'].to(device)
-        trg_kps = batch['trg_kps'].to(device)
-        kps_mask = batch['kps_valid'].to(device)
-
-        feats_src = model.image_encoder(src_img)
-        feats_trg = model.image_encoder(trg_img)
-
-        loss = criterion(feats_src, feats_trg, src_kps, trg_kps, kps_mask)
-
-        loss.backward()
-        optimizer.step()
-        lr_scheduler.step()
-
-        total_loss += loss.item()
-        pbar.set_postfix({'loss': f"{loss.item():.4f}"})
-
-    return total_loss / len(dataloader)
-
-
-def validate(model, dataloader, criterion, device):
-    model.eval()
-    total_val_loss = 0
-    with torch.no_grad():
-        for batch in dataloader:
-            src_img, trg_img = batch['src_img'].to(device), batch['trg_img'].to(device)
-            src_kps, trg_kps = batch['src_kps'].to(device), batch['trg_kps'].to(device)
-            kps_mask = batch['kps_valid'].to(device)
-
-            feats_src = model.image_encoder(src_img)
-            feats_trg = model.image_encoder(trg_img)
-            loss = criterion(feats_src, feats_trg, src_kps, trg_kps, kps_mask)
-            total_val_loss += loss.item()
-    return total_val_loss / len(dataloader)
-
-
-def run_training(sam_model, train_loader, val_loader, device, num_epochs=1):
-    save_path = 'checkpoints/best_sam_encoder.pth'
-    # 1. Setup
-    optimizer = setup_optimizer_v2(sam_model)
-    criterion = SoftSemanticLoss(temperature=0.1)
-
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer,
-        lr_lambda=lambda step: min(1.0, (step + 1) / 250)
+def train_finetune(model, train_loader, val_loader, save_dir, epochs=5, lr=1e-5, accumulation_steps=8):
+    scaler = GradScaler()
+    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
+                            lr=lr)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, 
+        max_lr=1e-4,
+        steps_per_epoch=len(train_loader),
+        epochs=epochs,
+        pct_start=0.1 
     )
+    criterion = DenseCrossEntropyLoss(temperature=0.1)
+    model.train() 
+    
+    best_val_loss = float('inf') #TENIAMO TRACCIA DEL MIGLIOR MODELLO
+    train_loss_history = []
+    val_loss_history = []
 
-    # 2. Training
-    for epoch in range(num_epochs):
-        print(f"\n--- Epoch {epoch+1}/{num_epochs} ---")
+    print(f"Inizio Training per {epochs} epoche...")
+    
+    for epoch in range(epochs):
+        train_loss = 0
+        steps = 0
+        optimizer.zero_grad()
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1} [TRAIN]")       
 
-        avg_train_loss = train_one_epoch(sam_model, train_loader, optimizer, criterion, device, lr_scheduler)
-        val_loss = validate(sam_model, val_loader, criterion, device)
+        for i, batch in enumerate(pbar):
+            try:
+                src = batch['src_img'].to(device)
+                trg = batch['trg_img'].to(device)
+                kps_src = batch['src_kps'].to(device)
+                kps_trg = batch['trg_kps'].to(device)
+                kps_mask = batch['kps_valid'].to(device)
+                
+                with autocast():
+                    feats_src = extract_features(model, src)
+                    feats_trg = extract_features(model, trg)
+                    loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
+                    loss = loss / accumulation_steps
 
-        print(f"Train Loss: {avg_train_loss:.4f} | Val Loss: {val_loss:.4f}")
-        torch.save(sam_model.image_encoder.state_dict(), save_path)
-        print(f"Modello salvato su {save_path}")
+                if loss.item() > 0:
+                    scaler.scale(loss).backward()
+
+                    if (i + 1) % accumulation_steps == 0:
+                        scaler.step(optimizer)
+                        scaler.update()
+                        optimizer.zero_grad()
+                        scheduler.step()
+
+                    current_loss = loss.item() * accumulation_steps
+                    train_loss += current_loss
+                    steps += 1
+                    pbar.set_postfix({'loss': train_loss / max(steps, 1)})
+                    
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    print(f"\n⚠️ OOM/CUDA Error. Salto batch e svuoto cache.")
+                    torch.cuda.empty_cache()
+                    continue
+                else:
+                    raise e # Se è un altro errore, fermati
+        
+        avg_train_loss = train_loss / max(steps, 1)
+
+        model.eval()
+        val_loss = 0
+        val_steps = 0
+        torch.cuda.empty_cache()
+
+        with torch.no_grad():
+            for batch in tqdm(val_loader, desc=f"Epoch {epoch+1} [VAL]"):                
+                src = batch['src_img'].to(device)
+                trg = batch['trg_img'].to(device)
+                kps_src = batch['src_kps'].to(device)
+                kps_trg = batch['trg_kps'].to(device)
+                kps_mask = batch['kps_valid'].to(device)
+
+                with autocast():
+                    feats_src = model.image_encoder(src)
+                    feats_trg = model.image_encoder(trg)
+                    loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
+                
+                if loss.item() > 0:
+                    val_loss += loss.item()
+                    val_steps += 1
+        
+        avg_val_loss = val_loss / max(val_steps, 1)
+
+        train_loss_history.append(avg_train_loss)
+        val_loss_history.append(avg_val_loss)
+
+        # --- STAMPA E SALVATAGGIO ---
+        print(f"\n✅ EPOCA {epoch+1} COMPLETATA:")
+        print(f"   📉 Training Loss:   {avg_train_loss:.4f}")
+        print(f"   📊 Validation Loss: {avg_val_loss:.4f}")
+        
+        # Logica di salvataggio
+        # 1. Salva il modello corrente come "latest"
+        latest_name = "sam_latest.pth"
+        torch.save(model.state_dict(), os.path.join(save_dir, latest_name))
+        
+        # 2. Salva SE è il migliore finora
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            best_name = "sam_best.pth"
+            torch.save(model.state_dict(), os.path.join(save_dir, best_name))
+            print(f"   🏆 Nuovo record! Salvato: {best_name}")
+        
+        print("-" * 60)
+    return train_loss_history, val_loss_history
 
 if __name__ == "__main__":
+    seed_everything(42)
+
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     dataset_root = 'dataset/SPair-71k'
@@ -89,33 +156,46 @@ if __name__ == "__main__":
 
     ckpt_path = download_sam_model(checkpoint_dir)
     sam = sam_model_registry["vit_b"](checkpoint=ckpt_path)
+    sam.to(device)
 
     n_layers = 2
+    n_epochs = 5  
     configure_model(sam, unfreeze_last_n_layers=n_layers)
-    
-    sam.to(device)
 
     pair_ann_path = os.path.join(dataset_root, 'PairAnnotation')
     layout_path = os.path.join(dataset_root, 'Layout')
     image_path = os.path.join(dataset_root, 'JPEGImages')
     
-    BATCH_SIZE = 12
-    NUM_WORKERS = 12
-    train_dataset = SPairDataset(
-        pair_ann_path, layout_path, image_path,
-        dataset_size='large', pck_alpha=0.1, datatype='trn')
+    train_dataset = SPairDataset(pair_ann_path, layout_path, image_path, dataset_size='large', pck_alpha=0.1, datatype='trn')
+    train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True, num_workers=4)
+    print(f"Dataset Training caricato: {len(train_dataset)} coppie.")
 
-    train_dataloader = DataLoader(
-        train_dataset, batch_size=BATCH_SIZE, shuffle=True,
-        num_workers=NUM_WORKERS, persistent_workers=True, pin_memory=True)
+    val_dataset = SPairDataset(pair_ann_path, layout_path, image_path, dataset_size='large', pck_alpha=0.1, datatype='val')
+    val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4)
+    print(f"Dataset Validation caricato: {len(val_dataset)} coppie.")
 
-    val_dataset = SPairDataset(
-        pair_ann_path, layout_path, image_path,
-        dataset_size='large', pck_alpha=0.1, datatype='val')
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    run_id = timestamp
 
-    val_dataloader = DataLoader(
-        val_dataset, batch_size=BATCH_SIZE, shuffle=False,
-        num_workers=NUM_WORKERS, persistent_workers=True, pin_memory=True)
+    # AVVIO TRAINING
+    print(f"\n\n{'#'*60}")
+    print(f"🧪 ESPERIMENTO: Fine-tuning ultimi {n_layers} layer")
+    print(f"{'#'*60}")
 
-    run_training(sam, train_dataloader, val_dataloader, device, num_epochs=1)
+    train_hist, val_hist = train_finetune(
+        sam, train_dataloader, val_dataloader, checkpoint_dir,
+        n_epochs, lr=1e-5, accumulation_steps=8)
+    
+    # PLOTTAGGIO RISULTATI
+    plot_training_results(train_hist, val_hist, results_dir, n_layers, run_id)
 
+    history_data = {
+        'n_layers': n_layers,
+        'run_id': run_id,
+        'train_loss': train_hist,
+        'val_loss': val_hist,
+        'epochs': n_epochs
+    }
+    json_filename = f"history_{n_layers}layers_{run_id}.json"
+    with open(os.path.join(checkpoint_dir, json_filename), 'w') as f:
+        json.dump(history_data, f)

@@ -126,27 +126,5 @@ class SPairDataset(Dataset):
             'trg_bbox': torch.tensor(annotation['trg_bndbox']).float()
         }
 
-        # --- DATA AUGMENTATION: RANDOM HORIZONTAL FLIP ---
-        # Applichiamo il flip nel 50% dei casi durante il training
-        if self.datatype == 'trn' and random.random() > 0.5:
-            sample['src_img'] = torch.flip(sample['src_img'], dims=[-1])
-            sample['trg_img'] = torch.flip(sample['trg_img'], dims=[-1])
-
-            # Flip Keypoints: la coordinata X deve essere invertita rispetto alla larghezza originale
-            original_w_src = sample['src_img'].shape[-1]
-            original_w_trg = sample['trg_img'].shape[-1]
-
-            # x_new = width - x_old
-            num = sample['num_kps']
-            sample['src_kps'][:num, 0] = original_w_src - 1 - sample['src_kps'][:num, 0]
-            sample['trg_kps'][:num, 0] = original_w_trg - 1 - sample['trg_kps'][:num, 0]
-
-            # x_min_new = width - x_max_old, x_max_new = width - x_min_old
-            s_bbox = sample['src_bbox']
-            sample['src_bbox'] = torch.tensor([original_w_src - 1 - s_bbox[2], s_bbox[1], original_w_src - 1 - s_bbox[0], s_bbox[3]])
-
-            t_bbox = sample['trg_bbox']
-            sample['trg_bbox'] = torch.tensor([original_w_trg - 1 - t_bbox[2], t_bbox[1], original_w_trg - 1 - t_bbox[0], t_bbox[3]])
-
         if self.transform: sample = self.transform(sample)
         return sample

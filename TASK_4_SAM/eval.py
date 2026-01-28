@@ -16,7 +16,7 @@ if __name__ == '__main__':
 
     dataset_root = 'dataset/SPair-71k'
     checkpoint_dir = 'checkpoints'
-    model_name = 'lora_adapter_final' # Il modello da testare
+    model_name = 'lora_sam_best' # Il modello da testare
 
     lora_path = os.path.join(checkpoint_dir, model_name)
 

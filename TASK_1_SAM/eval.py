@@ -19,7 +19,6 @@ from utils.common import download_sam_model
 def evaluate_pck(model, dataloader, device, alpha=0.1):
     model.eval()
     
-    #PULIZIA MEMORIA!!
     torch.cuda.empty_cache()
     gc.collect()
 
@@ -53,11 +52,9 @@ def evaluate_pck(model, dataloader, device, alpha=0.1):
 
         kps_mask = batch['kps_valid'][0].to(device)  #vettore di booleani [True, True, False, ...]
 
-        # 1. Estrai Features
         src_feats = extract_features(model, src_img, model_type='sam')
         trg_feats = extract_features(model, trg_img, model_type='sam')
 
-        # 2. Calcola Corrispondenze
         pred_kps = compute_correspondence(src_feats, trg_feats, src_kps, (img_H, img_W), softmax_flag=False)
         pred_kps = pred_kps.to(device) 
         pred_kps_valid = pred_kps[kps_mask]
@@ -65,15 +62,14 @@ def evaluate_pck(model, dataloader, device, alpha=0.1):
 
         if len(trg_kps_valid) == 0:
             continue
-        # 3. Valuta (PCK)
+    
         # Calcola distanza Euclidea tra predizione e ground truth
         l2_dist = torch.norm(pred_kps_valid - trg_kps_valid, dim=1)
 
         # Numero keypoints in questa immagine
         n_kps = len(l2_dist)
         
-        if n_kps > 0: # Skip se non ci sono keypoint (raro ma possibile)
-            # 4. Calcolo Corretti per diverse soglie
+        if n_kps > 0:
             thr_01 = pck_threshold_base
             thr_05 = pck_threshold_base * 0.5
             thr_20 = pck_threshold_base * 2.0
@@ -121,7 +117,7 @@ def evaluate_pck(model, dataloader, device, alpha=0.1):
     res_img_020 = np.mean(pck_020_per_img) * 100
 
     print("\n" + "="*50)
-    print(f"📊 REPORT VALUTAZIONE: SAM ViT-B su SPair-71k")
+    print(f"REPORT VALUTAZIONE: SAM ViT-B su SPair-71k")
     print("="*50)
     
     print(f"{'METRICA':<15} | {'PER KEYPOINT':<15} | {'PER IMAGE (Mean)':<15}")
@@ -132,9 +128,9 @@ def evaluate_pck(model, dataloader, device, alpha=0.1):
     print("="*50)
     
     print("\n" + "="*75)
-    print(f"📂 DETTAGLIO PER CATEGORIA")
+    print(f"DETTAGLIO PER CATEGORIA")
     print("="*75)
-    # Intestazione con tutte e tre le metriche
+
     print(f"{'CATEGORIA':<15} | {'PCK@0.10':<10} | {'PCK@0.05':<10} | {'PCK@0.20':<10} | {'# KPS':<6}")
     print("-" * 75)
 
@@ -156,7 +152,6 @@ if __name__ == "__main__":
 
     dataset_root = 'dataset/SPair-71k'
     checkpoint_dir = 'checkpoints'
-    model_name = 'sam_tuned_1layer.pth' # Il modello da testare
 
     pair_ann_path = os.path.join(dataset_root, 'PairAnnotation')
     layout_path = os.path.join(dataset_root, 'Layout')
