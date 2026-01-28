@@ -239,10 +239,9 @@ class AP10KDataset(CorrespondenceDataset):
             f,
             all_annotated_images,
             min_kps=3,
-            n_pairs_per_combination=250,
+            n_pairs_per_family=506,  # <-- nuovo cap per famiglia
             seed=42,
-            max_families=3,
-            max_species_per_family=4
+            max_families=8
     ):
         rng = random.Random(seed)
         total_written = 0
@@ -255,88 +254,74 @@ class AP10KDataset(CorrespondenceDataset):
             fam_spec.setdefault(fam, {}).setdefault(spec, []).append(rec)
 
         # -----------------------------
-        # SELEZIONE "STRICT" MA CON FALLBACK (NO LOOP INFINITO):
-        # - prova famiglie alternative finché possibile
-        # - errore SOLO se è IMPOSSIBILE soddisfare i numeri richiesti
+        # SELEZIONE FAMIGLIE (STRICT)
         # -----------------------------
         if max_families is None or max_families <= 0:
             raise ValueError("[CROSS-SPECIES] max_families deve essere un intero > 0")
 
-        if max_species_per_family is None or max_species_per_family <= 0:
-            raise ValueError("[CROSS-SPECIES] max_species_per_family deve essere un intero > 0")
+        if n_pairs_per_family is None or n_pairs_per_family <= 0:
+            raise ValueError("[CROSS-SPECIES] n_pairs_per_family deve essere un intero > 0")
 
         # cross-species richiede almeno 2 specie per famiglia
-        if max_species_per_family < 2:
-            raise ValueError(
-                "[CROSS-SPECIES] max_species_per_family deve essere >= 2 (cross-species richiede >=2 specie).")
-
-        # famiglie eleggibili: hanno abbastanza specie per prenderne ESATTAMENTE max_species_per_family
         eligible_fams = [
             fam for fam, spec_map in fam_spec.items()
-            if len(spec_map) >= max_species_per_family
+            if len(spec_map) >= 2
         ]
 
-        # Se non ci sono abbastanza famiglie eleggibili, è IMPOSSIBILE rispettare i requisiti
         if len(eligible_fams) < max_families:
             raise ValueError(
-                f"[CROSS-SPECIES] Impossibile selezionare {max_families} famiglie con almeno "
-                f"{max_species_per_family} specie ciascuna. Disponibili: {len(eligible_fams)}."
+                f"[CROSS-SPECIES] Impossibile selezionare {max_families} famiglie con almeno 2 specie. "
+                f"Disponibili: {len(eligible_fams)}."
             )
 
-        # scegli ESATTAMENTE max_families famiglie (riproducibile)
         selected_fams = rng.sample(eligible_fams, k=max_families)
-
-        # per ciascuna famiglia scegli ESATTAMENTE max_species_per_family specie (riproducibile)
-        new_fam_spec = {}
-        for fam in selected_fams:
-            spec_map = fam_spec[fam]
-            species = list(spec_map.keys())
-            chosen_species = rng.sample(species, k=max_species_per_family)
-            new_fam_spec[fam] = {sp: spec_map[sp] for sp in chosen_species}
-
-        fam_spec = new_fam_spec
+        fam_spec = {fam: fam_spec[fam] for fam in selected_fams}
 
         # -----------------------------
-        # GENERAZIONE PAIRS (come il tuo codice)
+        # GENERAZIONE PAIRS con CAP PER FAMIGLIA (reservoir sampling)
         # -----------------------------
         for fam in sorted(fam_spec.keys()):
             spec_map = fam_spec[fam]
             specs = sorted(spec_map.keys())
 
-            # tutte le combinazioni di specie nella famiglia scelta
+            reservoir = []  # conterrà al massimo n_pairs_per_family elementi
+            seen = 0  # numero di candidati validi visti nella famiglia
+
+            # tutte le combinazioni di specie nella famiglia
             for cat_a, cat_b in itertools.combinations(specs, 2):
                 A = spec_map[cat_a]
                 B = spec_map[cat_b]
 
-                cat_label = f"{fam}<{cat_a}-{cat_b}>"
-
-                possible = []
                 # direzione fissa: src da cat_a, trg da cat_b
                 for a, b in itertools.product(A, B):
                     src_kps, trg_kps = AP10KDataset._match_keypoints(a, b)
                     if len(src_kps) < min_kps:
                         continue
-                    possible.append((a, b, src_kps, trg_kps))
 
-                N = min(n_pairs_per_combination, len(possible))
-                if N <= 0:
-                    continue
-
-                sampled = rng.sample(possible, N)
-
-                for a, b, src_kps, trg_kps in sampled:
                     pair_out = {
-                        "src_imname": a["file_name"],  # sempre cat_a
-                        "trg_imname": b["file_name"],  # sempre cat_b
-                        "category": cat_label,
+                        "src_imname": a["file_name"],
+                        "trg_imname": b["file_name"],
+                        "category": fam,
                         "src_kps": src_kps,
                         "trg_kps": trg_kps,
                         "src_bndbox": a["bbox"],
                         "trg_bndbox": b["bbox"],
                     }
-                    f.write(json.dumps(pair_out, ensure_ascii=False) + "\n")
 
-                total_written += len(sampled)
+                    # ---- reservoir sampling: campione uniforme tra tutti i candidati validi
+                    seen += 1
+                    if len(reservoir) < n_pairs_per_family:
+                        reservoir.append(pair_out)
+                    else:
+                        j = rng.randrange(seen)  # 0..seen-1
+                        if j < n_pairs_per_family:
+                            reservoir[j] = pair_out
+
+            # scrivi al massimo n_pairs_per_family coppie per questa famiglia
+            for pair in reservoir:
+                f.write(json.dumps(pair, ensure_ascii=False) + "\n")
+
+            total_written += len(reservoir)
 
         print(f"[CROSS-SPECIES] Total pairs: {total_written}")
 
