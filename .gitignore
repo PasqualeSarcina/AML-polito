@@ -1,3 +1,16 @@
+
+# Ignore model checkpoints
+checkpoints/
+models/*.pth
+
+# Ignore model checkpoints
+models/dinov2/task2_dinov2/checkpoints/
+*.pth
+
+# Ignore model checkpoints
+models/dinov2/task4_dinov2/checkpoints/
+*.pth
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -177,6 +190,4 @@ cython_debug/
 dataset/*
 !dataset/.gitkeep
 
-# Checkpoints e modelli scaricati
-checkpoints/
-models/*.pth
+data/features/*

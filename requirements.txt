@@ -1,11 +1,17 @@
---extra-index-url https://download.pytorch.org/whl/cu121
-
+numpy
 torch
 torchvision
-numpy
-tqdm
+pillow
+scipy
 requests
-Pillow
+tqdm
+pandas
+segment_anything
+diffusers
 matplotlib
+ipython
+transformers
+xformers
+torchmetrics
+termcolor
 peft
-git+https://github.com/facebookresearch/segment-anything.git
