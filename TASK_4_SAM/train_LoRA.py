@@ -14,7 +14,7 @@ from segment_anything import sam_model_registry
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from TASK_2_SAM.loss import DenseCrossEntropyLoss
-from data.dataset import SPairDataset
+from data.dataset_SAM import SPairDataset
 from utils.common import download_sam_model
     
 def seed_everything(seed=42):

@@ -10,7 +10,7 @@ from collections import defaultdict
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data.dataset import SPairDataset
+from data.dataset_SAM import SPairDataset
 from utils.geometry import extract_features, compute_correspondence
 from segment_anything import sam_model_registry
 from utils.common import download_sam_model

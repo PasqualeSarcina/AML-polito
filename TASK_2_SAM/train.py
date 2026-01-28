@@ -18,7 +18,7 @@ from TASK_2_SAM.loss import DenseCrossEntropyLoss
 from TASK_2_SAM.configure_layers import configure_model
 from utils.geometry import extract_features
 from utils.common import download_sam_model, plot_training_results
-from data.dataset import SPairDataset
+from data.dataset_SAM import SPairDataset
 
 # ==========================================
 # TRAINING LOOP

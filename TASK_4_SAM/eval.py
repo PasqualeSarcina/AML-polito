@@ -8,7 +8,7 @@ from peft import PeftModel
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from TASK_1_SAM.eval import evaluate_pck
-from data.dataset import SPairDataset
+from data.dataset_SAM import SPairDataset
 from utils.common import download_sam_model
 
 if __name__ == '__main__':

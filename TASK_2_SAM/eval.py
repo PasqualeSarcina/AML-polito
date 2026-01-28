@@ -8,7 +8,7 @@ import gc
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data.dataset import SPairDataset
+from data.dataset_SAM import SPairDataset
 from segment_anything import sam_model_registry
 from utils.common import download_sam_model
 from TASK_1_SAM.eval import evaluate_pck
