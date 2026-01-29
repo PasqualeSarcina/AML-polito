@@ -7,7 +7,6 @@ from typing import Literal
 import numpy as np
 import itertools
 
-from Task2_DINOv3.train import base_dir
 from data.dataset import CorrespondenceDataset
 from data.dataset_downloader import download_ap10k
 
