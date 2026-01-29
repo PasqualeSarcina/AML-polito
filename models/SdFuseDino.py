@@ -4,14 +4,9 @@ from typing import List
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from data.ap10k import AP10KDataset
 from data.dataset import get_pckthres
-from data.pfpascal import PFPascalDataset
-from data.pfwillow import PFWillowDataset
-from data.spair import SPairDataset
 
 from models.dift import DiftEval
 from models.dift.PreProcess import PreProcess as DiftPreProcess
@@ -36,6 +31,7 @@ class SdFuseDino:
         self.device = args.device
         self.base_dir = args.base_dir
         self.timestep = args.timestep
+        self.enseble_size = args.ensemble_size
 
         self.sd = DiftEval(args)
         self.dino = Dinov2Eval(args)
@@ -47,7 +43,7 @@ class SdFuseDino:
         self.dino_stride = 14
         self.sd_stride = 16
 
-        self.sd_preproc = DiftPreProcess(out_dim=(self.H * self.sd_stride, self.W * self.sd_stride))
+        self.sd_preproc = DiftPreProcess(out_dim=(self.H * self.sd_stride, self.W * self.sd_stride), ensemble_size=self.enseble_size)
         self.dino_preproc = Dinov2PreProcess(out_dim=(self.H * self.dino_stride, self.W * self.dino_stride))
 
         self.dataset, self.dataloader = init_dataloader(self.dataset_name, 'test', transform=None)
