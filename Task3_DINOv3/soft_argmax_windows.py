@@ -45,4 +45,4 @@ def soft_argmax_window(sim_map_2d, window_radius=3, temperature=20):
     y_soft = torch.sum(weights * local_y)
     x_soft = torch.sum(weights * local_x)
 
-    return float(y_soft.item()), float(x_soft.item())
+    return y_soft, x_soft

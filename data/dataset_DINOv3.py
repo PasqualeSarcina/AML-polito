@@ -65,6 +65,11 @@ class SPairDataset(Dataset):
         ann_file = raw_line + '.json'
         json_path = os.path.join(self.pair_ann_path, self.datatype, ann_file)
 
+        if not os.path.exists(os.path.join(self.pair_ann_path, self.datatype, ann_file)):
+            ann_file = raw_line.replace(':', '_') + '.json'  # Handle ':' in filenames
+            json_path = os.path.join(self.pair_ann_path, self.datatype, ann_file)
+
+
         with open(json_path) as f:
             annotation = json.load(f)
 
@@ -80,8 +85,6 @@ class SPairDataset(Dataset):
         H_img, W_img = trg_img.shape[:2]
         H0, W0 = annotation["trg_imsize"][:2]
        
-
-
         # 3. Get Keypoints
         src_kps = np.array(annotation['src_kps']).astype(np.float32)
         trg_kps = np.array(annotation['trg_kps']).astype(np.float32)
@@ -95,8 +98,6 @@ class SPairDataset(Dataset):
         src_kps_aug = np.array(src_aug["keypoints"], dtype=np.float32)
         trg_kps_aug = np.array(trg_aug["keypoints"], dtype=np.float32)
         
-        
-
         # 5. Padding Logic
         MAX_KPS = 40 
         src_kps_padded = np.zeros((MAX_KPS, 2), dtype=np.float32)
@@ -119,7 +120,7 @@ class SPairDataset(Dataset):
             valid_mask[:common] = src_vis[:common] * trg_vis[:common]
 
         # --- Scale target bbox to 512x512 ---
-        H0, W0 = trg_img.shape[:2]   # usa l'immagine letta, non trg_imsize
+        H0, W0 = trg_img.shape[:2]   
         H1, W1 = 512, 512
 
         x1, y1, x2, y2 = annotation["trg_bndbox"]

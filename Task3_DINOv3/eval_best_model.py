@@ -80,10 +80,10 @@ if __name__ == '__main__':
         else:
             state_dict = checkpoint
 
-        # rimuovi 'module.'
+        # remove 'module.' prefix if present
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
 
-        # filtra chiavi esistenti + shape compatibile
+        # filter keys that exist and have compatible shapes
         model_sd = model.state_dict()
         filtered = {}
         dropped = []
@@ -122,6 +122,7 @@ if __name__ == '__main__':
                     'correct_kps_0_2': 0
 
                 }
+
             if category not in class_pck_image:
                 class_pck_image[category] = {
                     'total_image': 0,
@@ -129,7 +130,7 @@ if __name__ == '__main__':
                     'image_value_sum_0_1': 0,
                     'image_value_sum_0_2': 0
                 }
-                # Counters specific for THIS image
+            # Counters specific for THIS image
             img_tot_keypoints = 0
             img_correct_keypoints_0_05 = 0
             img_correct_keypoints_0_1 = 0
@@ -173,8 +174,8 @@ if __name__ == '__main__':
             thr_05 = max_side * 0.05
             thr_10 = max_side * 0.10
             thr_20 = max_side * 0.20
-            # Get threshold value
             
+            # Get threshold value
             for n_keypoint, keypoint_src in enumerate(kps_list_src):
 
                 if valid_mask[n_keypoint] == 0:
@@ -201,12 +202,11 @@ if __name__ == '__main__':
 
                 sim_2d = similarity_map.view(h_grid, w_grid)
 
-                y_hat, x_hat = soft_argmax_window(sim_2d)
+                y_col, x_row = soft_argmax_window(sim_map_2d=sim_2d)
                                 
                 # The logic remains: Coordinate * stride + offset
-                x_pred_pixel = x_hat * patch_size + (patch_size // 2)
-                y_pred_pixel = y_hat * patch_size + (patch_size // 2)
-
+                x_pred_pixel = x_row * patch_size + (patch_size // 2)
+                y_pred_pixel = y_col * patch_size + (patch_size // 2)
 
                 # Ground Truth Check
                 gt_x = trg_kps_gt[n_keypoint, 0].item()
@@ -215,7 +215,6 @@ if __name__ == '__main__':
                 # Distance & Update
                 distance = math.sqrt((x_pred_pixel - gt_x)**2 + (y_pred_pixel - gt_y)**2)
 
-            
                 is_correct_05 = distance <= thr_05
                 is_correct_10 = distance <= thr_10
                 is_correct_20 = distance <= thr_20

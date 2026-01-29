@@ -118,6 +118,7 @@ with torch.no_grad(): # Disable gradients
                 'correct_kps_0_2': 0
 
             }
+
         if category not in class_pck_image:
             class_pck_image[category] = {
                 'total_image': 0,
@@ -125,7 +126,7 @@ with torch.no_grad(): # Disable gradients
                 'image_value_sum_0_1': 0,
                 'image_value_sum_0_2': 0
             }
-            # Counters specific for THIS image
+        # Counters specific for THIS image
         img_tot_keypoints = 0
         img_correct_keypoints_0_05 = 0
         img_correct_keypoints_0_1 = 0
@@ -137,7 +138,7 @@ with torch.no_grad(): # Disable gradients
 
 
         # We pass the PADDED images
-        dict_src = model.forward_features(src_img) # Python dictionary.
+        dict_src = model.forward_features(src_img) 
         dict_trg = model.forward_features(trg_img)
 
         feats_src = dict_src["x_norm_patchtokens"] # [Batch_Size, Num_Patches, Dimension]
@@ -229,7 +230,7 @@ with torch.no_grad(): # Disable gradients
             if is_correct_10: img_correct_keypoints_0_1 += 1
             if is_correct_20: img_correct_keypoints_0_2 += 1
 
-        # AGGIORNAMENTO DATI CATEGORIA (PCK PER IMAGE)
+        # Update Image Level PCK
         if img_tot_keypoints > 0:
             image_accuracy_0_05 = img_correct_keypoints_0_05 / img_tot_keypoints
             image_accuracy_0_1 = img_correct_keypoints_0_1 / img_tot_keypoints

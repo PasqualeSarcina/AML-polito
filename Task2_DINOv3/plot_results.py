@@ -5,16 +5,17 @@ import numpy as np
 epochs = [1, 2, 3, 4, 5]
 
 # EXPERIMENT 1: (LR=1e-5, n_layers=1)
-exp1_train = [3.3955, 2.7276, 2.4855, 2.3630, 2.3099]
-exp1_val   = [3.0707, 2.8727, 2.8012, 2.7776, 2.7671]
+exp1_train = [3.2384, 2.3524, 1.9679, 1.7656, 1.6826]
+exp1_val   = [2.9633, 2.8498, 2.8893, 2.9658, 2.9918]
 
 # EXPERIMENT 2: Run (LR=1e-5, n_layers=2)
-exp2_train = [2.8348, 2.1053, 1.8428, 1.7101, 1.6581]
-exp2_val   = [2.6709, 2.6489, 2.6867, 2.7942, 2.7916]
+exp2_train = [2.5219, 1.3963, 0.9296, 0.7197, 0.6392]
+exp2_val   = [2.7336, 3.3673, 3.7713, 4.0759, 4.1797]
 
 # EXPERIMENT 3: (LR=1e-4, n_layers=1)
-exp3_train = [2.2723, 1.5257, 1.2649, 1.1229, 1.0356]
-exp3_val   = [2.8253, 2.9629, 3.2489, 3.4966, 3.6891]
+exp3_train = [1.5753, 0.4579, 0.1895, 0.1100, 0.0784]
+exp3_val   = [3.8168, 4.3429, 4.7625, 5.1967, 5.3779]
+
 
 # --- PLOTTING ---
 
@@ -32,9 +33,14 @@ ax1.grid(True, linestyle='--', alpha=0.6)
 ax1.legend()
 
 # 2. Validation Loss Plot (The Important One)
-ax2.plot(epochs, exp1_val, 'r--', marker='x', label='Exp 1: LR=1e-5 (1 Layer) — Stable')
-ax2.plot(epochs, exp2_val, 'b--', marker='x', label='Exp 2: LR=1e-5 (2 Layers) — Best early (epoch 2)')
-ax2.plot(epochs, exp3_val, 'g-',  marker='o', linewidth=2, label='Exp 3: LR=1e-4 (1 Layer) — Unstable (val increases)')
+ax2.plot(epochs, exp1_val, 'r--', marker='x',
+         label='Exp 1: LR=1e-5, 1 Layer — Late overfit')
+
+ax2.plot(epochs, exp2_val, 'b--', marker='x',
+         label='Exp 2: LR=1e-5, 2 Layers — Early overfit')
+
+ax2.plot(epochs, exp3_val, 'g-',  marker='o', linewidth=2,
+         label='Exp 3: LR=1e-4, 1 Layer — Divergent')
 
 ax2.set_title("Validation Loss and Generalization Behaviour", fontsize=14)
 ax2.set_xlabel("Epochs")
@@ -42,12 +48,6 @@ ax2.set_ylabel("Loss")
 ax2.grid(True, linestyle='--', alpha=0.6)
 ax2.legend()
 
-best_loss = min(exp2_val)
-best_epoch = exp2_val.index(best_loss) + 1
-ax2.annotate(f'Best (Exp 2): {best_loss:.4f}',
-             xy=(best_epoch, best_loss),
-             xytext=(best_epoch, best_loss - 0.5),
-             arrowprops=dict(facecolor='black', shrink=0.05))
 
 plt.tight_layout()
 plt.show()

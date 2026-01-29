@@ -162,7 +162,7 @@ def fine_tuning(epochs, lr, w_decay):
         with torch.no_grad():
             for i, batch in enumerate(pbar):
             
-                # 2. Training Logic (INDENTED INSIDE THE LOOP)
+                # 2. Validation Logic
                 src_img = batch['src_img'].to(device)
                 trg_img = batch['trg_img'].to(device)
                 src_kps = batch['src_kps'].to(device)
@@ -192,7 +192,7 @@ def fine_tuning(epochs, lr, w_decay):
             if avg_val_loss < best_val_loss:
                 best_val_loss=avg_val_loss
                 
-                project_root = Path(__file__).resolve().parents[1]   # AML-polito
+                project_root = Path(__file__).resolve().parents[1]   
 
                 save_dir = project_root / "checkpoints" / "dinov3"
                 save_dir.mkdir(parents=True, exist_ok=True)

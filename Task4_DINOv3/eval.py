@@ -5,8 +5,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import sys
-from safetensors.torch import load_file
-from peft import LoraConfig, get_peft_model, PeftModel
+from peft import PeftModel
 from pathlib import Path
 
 
@@ -29,6 +28,7 @@ if __name__ == '__main__':
     image_path = os.path.join(base_dir, 'JPEGImages')
 
     print("\n--- 2. Setting up Dataset and Dataloader ---")
+
     test_dataset = SPairDataset(
         pair_ann_path, layout_path, image_path,
         dataset_size="large", pck_alpha=0.5, datatype="test"
@@ -95,6 +95,7 @@ if __name__ == '__main__':
                     'image_value_sum_0_1': 0,
                     'image_value_sum_0_2': 0
                 }
+
             img_tot_keypoints = 0
             img_correct_keypoints_0_05 = 0
             img_correct_keypoints_0_1 = 0
@@ -138,8 +139,8 @@ if __name__ == '__main__':
             thr_05 = max_side * 0.05
             thr_10 = max_side * 0.10
             thr_20 = max_side * 0.20
-            # Get threshold value
-                  
+            
+            # Get threshold value   
             for n_keypoint, keypoint_src in enumerate(kps_list_src):
 
                 if valid_mask[n_keypoint] == 0:
@@ -179,7 +180,6 @@ if __name__ == '__main__':
                 # Distance & Update
                 distance = math.sqrt((x_pred_pixel - gt_x)**2 + (y_pred_pixel - gt_y)**2)
 
-            
                 is_correct_05 = distance <= thr_05
                 is_correct_10 = distance <= thr_10
                 is_correct_20 = distance <= thr_20
@@ -202,14 +202,11 @@ if __name__ == '__main__':
                 image_accuracy_0_1 = img_correct_keypoints_0_1 / img_tot_keypoints
                 image_accuracy_0_2 = img_correct_keypoints_0_2 / img_tot_keypoints
 
-                
                 class_pck_image[category]['total_image'] += 1
                 class_pck_image[category]['image_value_sum_0_05'] += image_accuracy_0_05
                 class_pck_image[category]['image_value_sum_0_1'] += image_accuracy_0_1
                 class_pck_image[category]['image_value_sum_0_2'] += image_accuracy_0_2
         
-
-
     # ==========================================
     # FINAL REPORTING
     # ==========================================
@@ -257,7 +254,6 @@ if __name__ == '__main__':
         print("="*55)
     else:
         print("No keypoints found.")
-
 
     # --- 2. PCK PER IMAGE (Image Accuracy) ---
     print("\n" + "="*50)

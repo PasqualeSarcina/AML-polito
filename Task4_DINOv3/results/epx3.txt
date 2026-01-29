@@ -1,12 +1,14 @@
-Epoch 1/3[Training]: Avg Training Loss: 3.3736
+Epoch 1/3[Training]: Avg Training Loss: 3.2313
 --> Learning Rate for next epoch: 0.00000750
-Epoch 1/3[Validation]: Avg Validation Loss: 3.0912
+Epoch 1/3[Validation]: Avg Validation Loss: 3.0453
+--> New Best Model Saved! (Loss: 3.0453)
 
-Epoch 2/3[Training]: Avg Training Loss: 2.8653
+Epoch 2/3[Training]: vg Training Loss: 2.5955
 --> Learning Rate for next epoch: 0.00000250
-Epoch 2/3[Validation]:  Avg Validation Loss: 2.9674
+Epoch 2/3[Validation]: Avg Validation Loss: 2.9462
+--> New Best Model Saved! (Loss: 2.9462)
 
-Epoch 3/3[Training]: Avg Training Loss: 2.7487
+Epoch 3/3[Training]: Avg Training Loss: 2.4221
 --> Learning Rate for next epoch: 0.00000000
-Epoch 3/3[Validation]:  Avg Validation Loss: 2.9280
---> New Best Model Saved! (Loss: 2.9280)
+Epoch 3/3[Validation]: Avg Validation Loss: 2.9395
+--> New Best Model Saved! (Loss: 2.9395)

@@ -113,7 +113,7 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
         model.train()
         for i, batch in enumerate(pbar):
 
-            # 2. Training Logic (INDENTED INSIDE THE LOOP)
+            # 2. Training Logic 
             src_img = batch['src_img'].to(device)
             trg_img = batch['trg_img'].to(device)
             src_kps = batch['src_kps'].to(device)
@@ -148,7 +148,7 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
         print(f"Epoch [{epoch+1}/{num_epochs}] Avg Training Loss: {avg_train_loss:.4f}")
         scheduler.step()
 
-        # Optional: Print current LR to verify
+        # Print current LR to verify
         current_lr = scheduler.get_last_lr()[0]
         print(f"--> Learning Rate for next epoch: {current_lr:.8f}")
 
@@ -158,7 +158,7 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
         with torch.no_grad():
             for i, batch in enumerate(pbar):
 
-                # 2. Training Logic (INDENTED INSIDE THE LOOP)
+                # 2. Validation Logic
                 src_img = batch['src_img'].to(device)
                 trg_img = batch['trg_img'].to(device)
                 src_kps = batch['src_kps'].to(device)

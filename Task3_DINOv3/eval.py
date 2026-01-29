@@ -78,6 +78,7 @@ if __name__ == '__main__':
                     'correct_kps_0_2': 0
 
                 }
+
             if category not in class_pck_image:
                 class_pck_image[category] = {
                     'total_image': 0,
@@ -85,7 +86,8 @@ if __name__ == '__main__':
                     'image_value_sum_0_1': 0,
                     'image_value_sum_0_2': 0
                 }
-                # Counters specific for THIS image
+
+            # Counters specific for THIS image
             img_tot_keypoints = 0
             img_correct_keypoints_0_05 = 0
             img_correct_keypoints_0_1 = 0
@@ -157,12 +159,11 @@ if __name__ == '__main__':
 
                 sim_2d = similarity_map.view(h_grid, w_grid)
 
-                y_hat, x_hat = soft_argmax_window(sim_2d)
+                y_col, x_row = soft_argmax_window(sim_map_2d=sim_2d)
                                 
                 # The logic remains: Coordinate * stride + offset
-                x_pred_pixel = x_hat * patch_size + (patch_size // 2)
-                y_pred_pixel = y_hat * patch_size + (patch_size // 2)
-
+                x_pred_pixel = x_row * patch_size + (patch_size // 2)
+                y_pred_pixel = y_col * patch_size + (patch_size // 2)
 
                 # Ground Truth Check
                 gt_x = trg_kps_gt[n_keypoint, 0].item()
@@ -171,7 +172,6 @@ if __name__ == '__main__':
                 # Distance & Update
                 distance = math.sqrt((x_pred_pixel - gt_x)**2 + (y_pred_pixel - gt_y)**2)
 
-            
                 is_correct_05 = distance <= thr_05
                 is_correct_10 = distance <= thr_10
                 is_correct_20 = distance <= thr_20
@@ -188,7 +188,7 @@ if __name__ == '__main__':
                 if is_correct_10: img_correct_keypoints_0_1 += 1
                 if is_correct_20: img_correct_keypoints_0_2 += 1
 
-            # Calculate Image-level Accuracy
+            # Update Image Level PCK
             if img_tot_keypoints > 0:
                 image_accuracy_0_05 = img_correct_keypoints_0_05 / img_tot_keypoints
                 image_accuracy_0_1 = img_correct_keypoints_0_1 / img_tot_keypoints
