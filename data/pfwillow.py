@@ -8,8 +8,8 @@ from data.dataset_downloader import download_pfwillow
 
 
 class PFWillowDataset(CorrespondenceDataset):
-    def __init__(self, transform=None):
-        super().__init__(dataset='pfwillow', datatype="test", transform=transform)
+    def __init__(self, base_dir, transform=None):
+        super().__init__(dataset='pfwillow', datatype="test", transform=transform, base_dir=base_dir)
 
         self.pfwillow_dir = os.path.join(self.dataset_dir, 'pf-willow')
         if not os.path.exists(self.pfwillow_dir):

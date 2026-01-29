@@ -24,7 +24,7 @@ def get_pckthres(bb_annotation, alpha: float):
 class CorrespondenceDataset(Dataset):
     r""" Parent class of PFPascal, PFWillow, and SPair """
 
-    def __init__(self, dataset: str, datatype: Literal["train", "test", "val"], transform = None):
+    def __init__(self, dataset: str, datatype: Literal["train", "test", "val"], base_dir, transform = None):
         '''
         dataset: pfwillow, pfpascal, spair.
         datatype: trn, test or val.
@@ -35,7 +35,7 @@ class CorrespondenceDataset(Dataset):
         if datatype not in ["train", "test", "val"]:
             raise ValueError(f"datatype must be 'train', 'test' or 'val', but got {datatype}.")
 
-        self.dataset_dir = os.path.join(os.path.dirname(Path(__file__).absolute()), '..', 'dataset')
+        self.dataset_dir = os.path.join(base_dir, '..', 'dataset')
         self.dataset = dataset
         self.datatype = datatype
         self.ann_files = None

@@ -52,6 +52,7 @@ def main():
     print("Using Google Colab:", using_colab)
     args.using_colab = using_colab
 
+    
     if using_colab:
         base_dir = os.path.join(os.path.abspath(os.path.curdir), 'AML-polito')
     else:

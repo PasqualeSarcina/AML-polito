@@ -26,7 +26,8 @@ class Dinov3Eval:
         self._init_model()
 
         transform = PreProcess()
-        self.dataset, self.dataloader = init_dataloader(self.dataset_name, 'test', transform=transform)
+        self.dataset, self.dataloader = init_dataloader(self.dataset_name, base_dir=self.base_dir, datatype='test',
+                                                        transform=transform)
 
         self.feat_dir = Path(self.base_dir) / "data" / "features" / "dinov3"
         self.processed_img = defaultdict(set)

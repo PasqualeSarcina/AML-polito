@@ -20,8 +20,8 @@ from utils.utils_results import CorrespondenceResult
 
 
 class SdFuseDino:
-    PCA_DIMS = [256, 256, 256]          # s5,s4,s3
-    WEIGHT = [1, 1, 1, 1, 1]            # [w_s5,w_s4,w_s3,w_sd,w_dino]
+    PCA_DIMS = [256, 256, 256]  # s5,s4,s3
+    WEIGHT = [1, 1, 1, 1, 1]  # [w_s5,w_s4,w_s3,w_sd,w_dino]
 
     def __init__(self, args):
         self.dataset_name = args.dataset
@@ -43,10 +43,12 @@ class SdFuseDino:
         self.dino_stride = 14
         self.sd_stride = 16
 
-        self.sd_preproc = DiftPreProcess(out_dim=(self.H * self.sd_stride, self.W * self.sd_stride), ensemble_size=self.enseble_size)
+        self.sd_preproc = DiftPreProcess(out_dim=(self.H * self.sd_stride, self.W * self.sd_stride),
+                                         ensemble_size=self.enseble_size)
         self.dino_preproc = Dinov2PreProcess(out_dim=(self.H * self.dino_stride, self.W * self.dino_stride))
 
-        self.dataset, self.dataloader = init_dataloader(self.dataset_name, 'test', transform=None)
+        self.dataset, self.dataloader = init_dataloader(self.dataset_name, base_dir=self.base_dir, datatype='test',
+                                                        transform=None)
 
     def _compute_features(self, batch: dict):
         # ----------------------------
@@ -127,8 +129,8 @@ class SdFuseDino:
             mean = X.mean(dim=0, keepdim=True)
             Xc = (X - mean).float()
 
-            _, _, V = torch.pca_lowrank(Xc, q=q)    # V: [C,q]
-            Z = Xc @ V[:, :q]                       # [2P,q]
+            _, _, V = torch.pca_lowrank(Xc, q=q)  # V: [C,q]
+            Z = Xc @ V[:, :q]  # [2P,q]
 
             Zs = Z[:P, :]
             Zt = Z[P:, :]
@@ -165,9 +167,9 @@ class SdFuseDino:
 
         with torch.no_grad():
             for batch in tqdm(
-                self.dataloader,
-                total=len(self.dataloader),
-                desc=f"DIFT + DINOv2 Eval on {self.dataset_name}",
+                    self.dataloader,
+                    total=len(self.dataloader),
+                    desc=f"DIFT + DINOv2 Eval on {self.dataset_name}",
             ):
                 # ------------------------------------------------------------
                 # 1) Features
@@ -241,9 +243,9 @@ class SdFuseDino:
                     src_vec = fuse_src_desc[0, 0, patch_index_src, :]  # [D]
 
                     # SOLO L2: sim = -||x-y||^2
-                    diff = trg_all - src_vec.unsqueeze(0)               # [P,D]
-                    sim_1d = -(diff * diff).sum(dim=-1)                 # [P]
-                    sim2d = sim_1d.view(self.H, self.W)                 # [H,W]
+                    diff = trg_all - src_vec.unsqueeze(0)  # [P,D]
+                    sim_1d = -(diff * diff).sum(dim=-1)  # [P]
+                    sim2d = sim_1d.view(self.H, self.W)  # [H,W]
 
                     if self.win_soft_argmax:
                         y_tok, x_tok = soft_argmax_window(

@@ -8,8 +8,8 @@ from data.dataset_downloader import download_spair
 
 
 class SPairDataset(CorrespondenceDataset):
-    def __init__(self, dataset_size: str, datatype: Literal["train", "test", "val"], transform = None):
-        super().__init__(dataset='spair', datatype=datatype, transform=transform)
+    def __init__(self, dataset_size: str, datatype: Literal["train", "test", "val"], base_dir, transform = None):
+        super().__init__(dataset='spair', datatype=datatype, transform=transform, base_dir=base_dir)
 
         self.spair_dir = os.path.join(self.dataset_dir, 'SPair-71k')
         if not os.path.exists(self.spair_dir):

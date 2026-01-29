@@ -7,13 +7,14 @@ from typing import Literal
 import numpy as np
 import itertools
 
+from Task2_DINOv3.train import base_dir
 from data.dataset import CorrespondenceDataset
 from data.dataset_downloader import download_ap10k
 
 
 class AP10KDataset(CorrespondenceDataset):
-    def __init__(self, datatype: Literal["train", "test", "val"], transform=None, min_kps=3):
-        super().__init__(dataset='ap10k', datatype=datatype, transform=transform)
+    def __init__(self, datatype: Literal["train", "test", "val"], base_dir, transform=None, min_kps=3):
+        super().__init__(dataset='ap10k', datatype=datatype, base_dir=base_dir, transform=transform)
 
         self.ap10kdir = os.path.join(self.dataset_dir, 'ap-10k')
         if not os.path.exists(self.ap10kdir):

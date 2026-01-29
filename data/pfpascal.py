@@ -10,8 +10,8 @@ from data.dataset_downloader import download_pfpascal
 
 
 class PFPascalDataset(CorrespondenceDataset):
-    def __init__(self, datatype: Literal["train", "test", "val"], transform = None):
-        super().__init__(dataset='pfpascal', datatype=datatype, transform=transform)
+    def __init__(self, datatype: Literal["train", "test", "val"], base_dir, transform = None):
+        super().__init__(dataset='pfpascal', datatype=datatype, transform=transform, base_dir=base_dir)
 
         self.pfpascal_dir = os.path.join(self.dataset_dir, 'pf-pascal')
         if not os.path.exists(self.pfpascal_dir):

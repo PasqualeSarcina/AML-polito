@@ -30,7 +30,8 @@ class Dinov2Eval:
         self._init_model()
 
         transform = PreProcess(out_dim=(518, 518))
-        self.dataset, self.dataloader = init_dataloader(self.dataset_name, 'test', transform=transform)
+        self.dataset, self.dataloader = init_dataloader(self.dataset_name, base_dir=self.base_dir, datatype='test',
+                                                        transform=transform)
 
         self.feat_dir = Path(self.base_dir) / "data" / "features" / "dinov2"
         self.processed_img = defaultdict(set)
@@ -51,7 +52,7 @@ class Dinov2Eval:
         self.model = model.to(self.device).eval()
 
     def compute_features(self, img_tensor: torch.Tensor, img_name: str,
-                          category: str) -> torch.Tensor:
+                         category: str) -> torch.Tensor:
         if self.dataset_name == "ap-10k":
             category = "all"
         if img_name in self.processed_img[category]:
@@ -74,13 +75,14 @@ class Dinov2Eval:
 
         torch.cuda.empty_cache()
         with torch.no_grad():
-            for batch in tqdm(self.dataloader, total=len(self.dataloader), desc=f"Computing correspondences with DINOv2 on {self.dataset_name}",
+            for batch in tqdm(self.dataloader, total=len(self.dataloader),
+                              desc=f"Computing correspondences with DINOv2 on {self.dataset_name}",
                               smoothing=0.1, mininterval=0.7, maxinterval=2.0):
                 category = batch["category"]
 
                 # featuremaps salvate su immagini resized 518x518
-                feats_src = self.compute_features(batch["src_img"], batch["src_imname"], category) # Resized image
-                feats_trg = self.compute_features(batch["trg_img"], batch["trg_imname"], category) # Resized image
+                feats_src = self.compute_features(batch["src_img"], batch["src_imname"], category)  # Resized image
+                feats_trg = self.compute_features(batch["trg_img"], batch["trg_imname"], category)  # Resized image
 
                 feats_src = feats_src.to(self.device)
                 feats_trg = feats_trg.to(self.device)
@@ -127,7 +129,8 @@ class Dinov2Eval:
                     sim_2d = sim_1d.view(h_grid, w_grid)  # (37,37)
 
                     if self.win_soft_argmax:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=self.wsam_win_size, temperature=self.wsam_beta)  # ritorna x,y
+                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=self.wsam_win_size,
+                                                                        temperature=self.wsam_beta)  # ritorna x,y
                     else:
                         y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=1)
 
@@ -146,9 +149,9 @@ class Dinov2Eval:
                     CorrespondenceResult(
                         category=category,
                         distances=distances_this_image,
-                        pck_threshold_0_05=batch["pck_threshold_0_05"], # Resized PCK thresholds
-                        pck_threshold_0_1=batch["pck_threshold_0_1"], # Resized PCK thresholds
-                        pck_threshold_0_2=batch["pck_threshold_0_2"], # Resized PCK thresholds
+                        pck_threshold_0_05=batch["pck_threshold_0_05"],  # Resized PCK thresholds
+                        pck_threshold_0_1=batch["pck_threshold_0_1"],  # Resized PCK thresholds
+                        pck_threshold_0_2=batch["pck_threshold_0_2"],  # Resized PCK thresholds
                     )
                 )
 
