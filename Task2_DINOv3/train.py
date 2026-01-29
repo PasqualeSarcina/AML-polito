@@ -206,5 +206,3 @@ def main():
     fine_tuning(epochs=EPOCHS, lr=LEARNING_RATE, w_decay=WEIGHT_DECAY, n_layers=N_LAYERS_TO_FINE_TUNE)
 
 
-if __name__ == "__main__":
-    main()
