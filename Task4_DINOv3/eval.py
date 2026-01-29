@@ -11,13 +11,19 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data.dataset_DINOv3 import SPairDataset
-from utils.setup_data_DINOv3 import setup_data
 from models.dinov3.model_DINOv3 import load_dinov3_backbone
 from Task3_DINOv3.soft_argmax_windows import soft_argmax_window
 
 if __name__ == '__main__':
     print("--- 1. Checking Data Availability ---")
-    data_root = setup_data()
+    using_colab = os.getenv("COLAB_RELEASE_TAG")
+    print("Using Google Colab:", using_colab)
+
+    if using_colab:
+        base_dir = os.path.join(os.path.abspath(os.path.curdir), 'AML-polito')
+    else:
+        base_dir = os.path.abspath(os.path.curdir)
+    data_root = os.path.join(base_dir, 'dataset')
     if data_root is None:
         print("Error: Dataset not found. Please run utils/setup_data.py or check data location.")
         sys.exit(1)
