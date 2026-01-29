@@ -48,7 +48,7 @@ def build_parser():
 def main():
     args = build_parser().parse_args()
     print("Starting evaluation...")
-    using_colab = 'google.colab' in str(get_ipython())
+    using_colab = os.getenv("COLAB_RELEASE_TAG")
     print("Using Google Colab:", using_colab)
     args.using_colab = using_colab
 
