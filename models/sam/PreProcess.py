@@ -35,7 +35,7 @@ class PreProcess(object):
             sample[f"{key}_img"] = img_resized
 
             # salva scale e resized shape (utili per debug / conversioni)
-            new_h, new_w = self.transform.get_preprocess_shape(H, W, self.transform.target_length)
+            new_h, new_w = int(img_resized.shape[-2]), int(img_resized.shape[-1])
             sample[f"{key}_orig_size"] = (H, W)
             sample[f"{key}_resized_size"] = (new_h, new_w)
             sample[f"{key}_scale"] = (new_h / H, new_w / W)  # (sy, sx)
