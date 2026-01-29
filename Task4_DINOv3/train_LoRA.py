@@ -1,28 +1,62 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import sys
 import os
 import random
-from dataclasses import dataclass
-from pathlib import Path
-from copy import deepcopy
-
 import numpy as np
-import torch
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from tqdm import tqdm
+from peft import LoraConfig, get_peft_model
+from pathlib import Path
 
-from dataset.dataset_DINOv3 import SPairDataset, collate_spair
-from models.dinov3.model_DINOv3 import load_dinov3_backbone
-from Task2_DINOv3.prepare_train import (
-    train_one_epoch,
-    validate_one_epoch,
-)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from data.dataset_DINOv3 import SPairDataset
 from utils.setup_data_DINOv3 import setup_data
-from Task2_DINOv3.loss_DINOv3 import InfoNCEPatchClassifyLoss
-from Task4_DINOv3.utils_LoRA import make_peft_lora_model, summarize_trainables, save_checkpoint
+from models.dinov3.model_DINOv3 import load_dinov3_backbone
+from Task2_DINOv3.loss import InfoNCELoss
 
+data_root = setup_data()
+if data_root is None:
+    print("Error: Dataset not found. Please run utils/setup_data.py or check data location.")
+    sys.exit(1)
+
+base_dir = os.path.join(data_root, 'SPair-71k')
+pair_ann_path = os.path.join(base_dir, 'PairAnnotation')
+layout_path = os.path.join(base_dir, 'Layout')
+image_path = os.path.join(base_dir, 'JPEGImages')
+
+train_dataset = SPairDataset(
+    pair_ann_path, layout_path, image_path,
+    dataset_size='large', pck_alpha=0.5, datatype='trn'
+)
+
+val_dataset = SPairDataset(
+    pair_ann_path, layout_path, image_path,
+    dataset_size="large", pck_alpha=0.5, datatype="val"
+)
+
+trn_dataloader = DataLoader(
+    train_dataset,
+    batch_size=1,
+    shuffle=True,
+    num_workers=4,
+    persistent_workers=True,
+    pin_memory=True
+)
+
+val_dataloader = DataLoader(
+    val_dataset,
+    batch_size=1,
+    shuffle=False,
+    num_workers=4,
+    persistent_workers=True,
+    pin_memory=True
+)
 
 def seed_everything(seed=42):
     random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -30,162 +64,148 @@ def seed_everything(seed=42):
     print(f">>> SEED SET TO {seed} <<<")
 
 
-def freeze_all(model):
-    for p in model.parameters():
-        p.requires_grad_(False)
-    model.eval()
-
-EPOCHS = 2
-
-def finetune_LoRA(model, pretrained_state, loader_train, loader_val, device):
-    n_blocks = len(model.blocks)
-
-    LORA_CONFIGS = [
-        dict(tag="lora_qkv_last1_r8", last_n_blocks=min(1,n_blocks), r=8, alpha=16, dropout=0.1, suffixes=("attn.qkv",)),
-        dict(tag="lora_proj_last1_r8", last_n_blocks=min(1,n_blocks), r=8, alpha=16, dropout=0.1, suffixes=("attn.proj",)),
-        dict(tag="lora_qkv_last4_r8", last_n_blocks=min(4,n_blocks), r=8, alpha=16, dropout=0.1, suffixes=("attn.qkv",)),
-        dict(tag="lora_proj_last4_r8", last_n_blocks=min(4,n_blocks), r=8, alpha=16, dropout=0.1, suffixes=("attn.proj",)),
-    ]
-
-    all_hist = {}
-    best_by_tag = {}
-
-    loss_fn = InfoNCEPatchClassifyLoss(out_size=512, patch_size=16, temperature=0.07)
-    
-    for cfg in LORA_CONFIGS:
-        tag = cfg["tag"]
-        print("\n" + "="*60)
-        print(f">>> TASK4 LoRA SCREENING: {tag}")
-        print("="*60)
-
-        model.load_state_dict(pretrained_state, strict=True)
-        freeze_all(model)
-        base_cpu_model = deepcopy(model).cpu().eval()
-
-
-        lora_model = make_peft_lora_model(
-            base_cpu_model,
-            last_n_blocks=cfg["last_n_blocks"],
-            r=cfg["r"],
-            alpha=cfg["alpha"],
-            dropout=cfg["dropout"],
-            suffixes=cfg["suffixes"],)
-        
-        _ = summarize_trainables(lora_model)
-
-        optimizer = torch.optim.AdamW(
-            (p for p in lora_model.parameters() if p.requires_grad),
-            lr=1e-3,
-            weight_decay=1e-2,
-        )
-
-        scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
-
-        best_val_loss = float("inf")
-        best_path = None
-        history = []
-
-        lora_model=lora_model.to(device)
-
-        scheduler = CosineAnnealingLR( optimizer, T_max=2, eta_min=1e-6)
-
-        for epoch in range(1, EPOCHS + 1):
-            lora_model.train()
-            train_loss = train_one_epoch(
-                lora_model,
-                loader_train,
-                optimizer,
-                device,
-                scaler,
-                loss_fn,
-                max_train_batches=None,
-                n_layers_feats=1,
-                grad_clip=1.0,
-            )   
-
-            lora_model.eval()
-
-            val_res = validate_one_epoch(
-                lora_model,
-                loader_val,
-                device,
-                loss_fn,
-                max_val_batches=None,
-                n_layers_feats=1,
-            )
-
-            lr_current = optimizer.param_groups[0]['lr']
-            val_loss=float(val_res["val_loss"])
-
-            history.append({
-                "epoch": epoch,
-                "train_loss": float(train_loss),
-                "val_loss": float(val_loss),
-                "lr": lr_current,
-            })
-            print(f"Epoch {epoch:03d} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | LR: {lr_current:.6f}")    
-            
-            scheduler.step()
-
-            # Checkpointing
-            is_best = float(val_loss) < best_val_loss
-            if is_best:
-                best_val_loss = float(val_loss)
-                saved_path = save_checkpoint(
-                    lora_model,
-                    optimizer,
-                    epoch,
-                    tag,
-                    is_best=is_best,
-                    val_loss=best_val_loss,
-                    scaler=scaler,
-                    hparams=cfg,
-                )
-
-                if saved_path is not None:
-                    best_path = saved_path
-
-        all_hist[tag] = history
-        best_by_tag[tag] = best_path
-    print("\n=== TRAINING COMPLETE ===")
-    print("Best checkpoints by LoRA config:")
-    for tag, path in best_by_tag.items():
-        print(f"  {tag}: {path}")
-    return all_hist, best_by_tag
-
-def main():
+def fine_tuning(epochs, lr, w_decay):
     seed_everything(42)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Dataset root from your setup helper
-    data_root = setup_data()
-    if data_root is None:
-        print("Dataset not found. Please follow README.md.")
-        return
-
-    base_dir = os.path.join(data_root, "SPair-71k")
-
-    ds_train = SPairDataset(base_dir, split="trn", layout_size="large", out_size=512, pad_mode="center", max_pairs=None)
-    ds_val   = SPairDataset(base_dir, split="val", layout_size="large", out_size=512, pad_mode="center", max_pairs=None)
-
-    loader_train = DataLoader(ds_train, batch_size=8, shuffle=True,  num_workers=0, drop_last=True,  collate_fn=collate_spair)
-    loader_val   = DataLoader(ds_val,   batch_size=1,   shuffle=False, num_workers=0, drop_last=False, collate_fn=collate_spair)
-
-    # Load backbone once
-    # (make these paths relative to repo in your actual project)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dinov3_dir = Path("/content/dinov3") if Path("/content/dinov3").exists() else Path("third_party/dinov3")
-    weights_path = Path("checkpoints/dinov3/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth")
+    project_root = Path(__file__).resolve().parents[1]
+    weights_path = project_root / "checkpoints" / "dinov3" / "dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth"
     model = load_dinov3_backbone(
-        dinov3_dir=dinov3_dir,
-        weights_path=weights_path,
-        device=device,
-        sanity_input_size=512,
-        verbose=True,
+            dinov3_dir=dinov3_dir,
+            weights_path=weights_path,
+            device=device,
+            sanity_input_size=512,
+            verbose=True,
+        )
+    model = model.to(device)
+  
+    lora_config = LoraConfig(
+        r=16,                  
+        lora_alpha=32,          
+        target_modules=["qkv"], # Target the QKV projection layers in the Attention modules
+        lora_dropout=0.1,      
+        bias="none"
     )
 
-    n_blocks = len(model.blocks)
-    print("DINOv3 blocks:", n_blocks)
-    pretrained_state = deepcopy(model.state_dict())
-    finetune_LoRA(model, pretrained_state, loader_train, loader_val, device)
+    # 3. Apply LoRA to the model
+    model = get_peft_model(model, lora_config)
+
+    # 4. Move model to device
+    model = model.to(device)
+
+    # 5. control trainable parameters
+    model.print_trainable_parameters()
+    
+    criterion = InfoNCELoss(temperature=0.07).to(device)
+
+    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), 
+                            lr=lr, weight_decay=w_decay)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+
+    scaler = torch.amp.GradScaler('cuda')
+    num_epochs = epochs
+    best_val_loss=float('inf')
+    accumulation_steps = 8  # Simulate batch_size = 8
+    
+    for epoch in range(num_epochs):
+        model.train()
+        total_epoch_loss = 0
+        pbar = tqdm(trn_dataloader, desc=f"Epoch {epoch+1}/{num_epochs}[Training]")
+        
+        optimizer.zero_grad()  # Initialize gradients before the loop
+
+        for i, batch in enumerate(pbar):
+            
+            # 2. Training Logic 
+            src_img = batch['src_img'].to(device)
+            trg_img = batch['trg_img'].to(device)
+            src_kps = batch['src_kps'].to(device)
+            trg_kps = batch['trg_kps'].to(device)
+            mask    = batch['valid_mask'].to(device)
+            
+            model.train()
+            with torch.amp.autocast('cuda'):
+                output_src = model.forward_features(src_img)
+                output_trg = model.forward_features(trg_img)
+                
+                feat_src = output_src['x_norm_patchtokens']
+                feat_trg = output_trg['x_norm_patchtokens']
+                
+                B, N, C = feat_src.shape
+                H, W = 32, 32
+                feat_src = feat_src.permute(0, 2, 1).reshape(B, C, H, W)
+                feat_trg = feat_trg.permute(0, 2, 1).reshape(B, C, H, W)
+
+                loss = criterion(feat_src, feat_trg, src_kps, trg_kps, mask)
+                loss = loss / accumulation_steps  # Normalize loss for gradient accumulation
+
+            scaler.scale(loss).backward()
+            
+            if (i + 1) % accumulation_steps == 0 or (i + 1) == len(trn_dataloader):
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+            
+            total_epoch_loss += loss.item() * accumulation_steps
+            pbar.set_postfix({'loss': loss.item() * accumulation_steps})
+    
+        avg_train_loss = total_epoch_loss / len(trn_dataloader)
+        print(f"Epoch [{epoch+1}/{num_epochs}] Avg Training Loss: {avg_train_loss:.4f}")
+        scheduler.step()
+        
+        current_lr = scheduler.get_last_lr()[0]
+        print(f"--> Learning Rate for next epoch: {current_lr:.8f}")
+        
+        model.eval()
+        val_loss=0
+        pbar = tqdm(val_dataloader, desc=f"Epoch {epoch+1}/{num_epochs}[Validation]")
+        with torch.no_grad():
+            for i, batch in enumerate(pbar):
+            
+                # 2. Validation Logic
+                src_img = batch['src_img'].to(device)
+                trg_img = batch['trg_img'].to(device)
+                src_kps = batch['src_kps'].to(device)
+                trg_kps = batch['trg_kps'].to(device)
+                mask    = batch['valid_mask'].to(device)
+                
+                with torch.amp.autocast('cuda'):
+                    output_src = model.forward_features(src_img)
+                    output_trg = model.forward_features(trg_img)
+                    
+                    feat_src = output_src['x_norm_patchtokens']
+                    feat_trg = output_trg['x_norm_patchtokens']
+                    
+                    B, N, C = feat_src.shape
+                    H, W = 32, 32
+                    feat_src = feat_src.permute(0, 2, 1).reshape(B, C, H, W)
+                    feat_trg = feat_trg.permute(0, 2, 1).reshape(B, C, H, W)
+
+                    loss = criterion(feat_src, feat_trg, src_kps, trg_kps, mask)
+
+                val_loss += loss.item()
+                pbar.set_postfix({'loss': loss.item()})
+    
+            
+            avg_val_loss = val_loss / len(val_dataloader)
+            print(f"Epoch [{epoch+1}/{num_epochs}] Avg Validation Loss: {avg_val_loss:.4f}")
+            if avg_val_loss < best_val_loss:
+                best_val_loss=avg_val_loss
+                
+                project_root = Path(__file__).resolve().parents[1]   
+
+                save_dir = project_root / "checkpoints" / "dinov3"
+                save_dir.mkdir(parents=True, exist_ok=True)
+
+                best_dir = save_dir / "best_model_LoRA"
+                model.save_pretrained(best_dir)
+
+                print(f"Saved PEFT adapter to: {best_dir}")
+                print(f"--> New Best Model Saved! (Loss: {best_val_loss:.4f})")
+
 if __name__ == "__main__":
-    main()  
+    EPOCHS = 5
+    LEARNING_RATE = 1e-4
+    WEIGHT_DECAY = 1e-2
+
+    fine_tuning(epochs=EPOCHS, lr=LEARNING_RATE, w_decay=WEIGHT_DECAY)

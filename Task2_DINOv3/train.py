@@ -1,216 +1,200 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import sys
 import os
 import random
-from dataclasses import dataclass
-from pathlib import Path
-from copy import deepcopy
-
 import numpy as np
-import torch
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from tqdm import tqdm
+from pathlib import Path
 
-from dataset.dataset_DINOv3 import SPairDataset, collate_spair
-from models.dinov3.model_DINOv3 import load_dinov3_backbone
-from Task2_DINOv3.prepare_train import (
-    prepare_model_for_fine_tuning,
-    train_one_epoch,
-    validate_one_epoch,
-    save_checkpoint,
-    PATH_CHECKPOINTS,  # IMPORTANT: single source of truth
-)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from data.dataset_DINOv3 import SPairDataset
 from utils.setup_data_DINOv3 import setup_data
-from Task2_DINOv3.loss_DINOv3 import InfoNCEPatchClassifyLoss
+from models.dinov3.model_DINOv3 import load_dinov3_backbone
+from Task2_DINOv3.loss import InfoNCELoss
 
+data_root = setup_data() 
+if data_root is None: 
+    print("Error: Dataset not found. Please run utils/setup_data_DINOv3.py or check data location.")
+    sys.exit(1)
+
+base_dir = os.path.join(data_root, 'SPair-71k') 
+pair_ann_path = os.path.join(base_dir, 'PairAnnotation')
+layout_path = os.path.join(base_dir, 'Layout')
+image_path = os.path.join(base_dir, 'JPEGImages')
+
+train_dataset = SPairDataset(
+    pair_ann_path, layout_path, image_path, 
+    dataset_size='large', pck_alpha=0.5, datatype='trn'
+)
+
+val_dataset = SPairDataset(
+    pair_ann_path, layout_path, image_path,
+    dataset_size="large", pck_alpha=0.5, datatype="val"
+)
+
+trn_dataloader = DataLoader(
+    train_dataset, 
+    batch_size=1, 
+    shuffle=True, 
+    num_workers=4,           
+    persistent_workers=True, 
+    pin_memory=True          
+)
+
+val_dataloader = DataLoader(
+    val_dataset, 
+    batch_size=1, 
+    shuffle=False, 
+    num_workers=4,           
+    persistent_workers=True, 
+    pin_memory=True          
+)
 
 def seed_everything(seed=42):
     random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
     print(f">>> SEED SET TO {seed} <<<")
-
-@dataclass
-class FinetuneScreeningResult:
-    layer_name: str
-    best_epoch: int
-    best_val_loss: float
-    history: dict
-    best_ckpt_path: str | None
     
-def freeze_all(model):
-    for p in model.parameters():
-        p.requires_grad_(False)
-    model.eval()
 
-def finetune_screening(
-    model,
-    pretrained_state,
-    loader_train,
-    loader_val,
-    device,
-    *,
-    epochs: int,
-    lr: float,
-    weight_decay: float,
-    n_layer: int,
-) -> FinetuneScreeningResult:
-
-    layer_name = f"Layer_{n_layer}"
-    os.makedirs(PATH_CHECKPOINTS, exist_ok=True)
-    best_ckpt_path = os.path.join(PATH_CHECKPOINTS, f"best_model_{layer_name}.pth")
-
-    model.load_state_dict(pretrained_state, strict=True)
-    model.to(device)
-    freeze_all(model)
-
-    loss_fn = InfoNCEPatchClassifyLoss(out_size=512, patch_size=16, temperature=0.07)
-    
-    prepare_model_for_fine_tuning(
-        model,
-        num_layers_to_unfreeze=n_layer,
-        unfreeze_final_norm=True
-    )
-
-    optimizer = torch.optim.AdamW(
-        (p for p in model.parameters() if p.requires_grad),
-        lr=lr,
-        weight_decay=weight_decay,
-    )
-
-
-    scheduler = CosineAnnealingLR(
-        optimizer, T_max=epochs, eta_min=1e-6
-    )
-
-    history = {"train_loss": [], "val_loss": [], "lr": []}
-    best_val_loss, best_epoch = float("inf"), -1
-
-    scaler = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda"))
-
-    for epoch in range(1, epochs + 1):
-        train_loss = train_one_epoch(
-            model=model,
-            loader=loader_train,
-            optimizer=optimizer,
-            device=device,
-            scaler=scaler,
-            loss_fn=loss_fn,
-            max_train_batches=None,
-            n_layers_feats=1,
-            grad_clip=1.0,
-        )
-
-        val_res = validate_one_epoch(
-            model=model,
-            loader=loader_val,
-            device=device,
-            loss_fn=loss_fn,
-            max_val_batches=None,
-            n_layers_feats=1,     
-        )
-
-        current_lr = optimizer.param_groups[0]['lr']  
-        history["lr"].append(current_lr)
-        scheduler.step()
-        history["train_loss"].append(float(train_loss))
-        history["val_loss"].append(float(val_res["val_loss"]))
-
-
-        print(
-            f"Epoch {epoch}: "
-            f"Train Loss {float(train_loss):.4f} | "
-            f"Val Loss {float(val_res['val_loss']):.4f} | "
-        )
-
-        if float(val_res['val_loss']) < best_val_loss:
-            best_val_loss = float(val_res["val_loss"])
-            best_epoch = epoch
-
-            save_checkpoint(
-                model=model,
-                optimizer=optimizer,
-                epoch=best_epoch,
-                layer_name=layer_name,
-                is_best=True,
-                scaler=scaler,
-                hparams={
-                    "epochs": epochs,
-                    "lr": current_lr,
-                    "sigma": 1.0,
-                    "temperature": 0.7,
-                    "weight_decay": weight_decay,
-                    "n_layer": n_layer,
-                    "out_size": 512,
-                    "patch_size": 16,
-                    "n_layers_feats": 1,
-                    "best_val_loss": best_val_loss,
-                },
-            )
-
-    if not os.path.exists(best_ckpt_path):
-        best_ckpt_path = None
-
-    return FinetuneScreeningResult(layer_name, best_epoch, best_val_loss, history, best_ckpt_path)
-# -----------------------------
-# Main
-# -----------------------------
-def main():
-    seed_everything(42)
+def fine_tuning(epochs, lr, w_decay, n_layers):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Dataset root from your setup helper
-    data_root = setup_data()
-    if data_root is None:
-        print("Dataset not found. Please follow README.md.")
-        return
-
-    base_dir = os.path.join(data_root, "SPair-71k")
-
-    ds_train = SPairDataset(base_dir, split="trn", layout_size="large", out_size=512, pad_mode="center", max_pairs=None)
-    ds_val   = SPairDataset(base_dir, split="val", layout_size="large", out_size=512, pad_mode="center", max_pairs=None)
-
-    loader_train = DataLoader(ds_train, batch_size=8, shuffle=True,  num_workers=0, drop_last=True,  collate_fn=collate_spair)
-    loader_val   = DataLoader(ds_val,   batch_size=1,   shuffle=False, num_workers=0, drop_last=False, collate_fn=collate_spair)
-
-    # Load backbone once
-    # (make these paths relative to repo in your actual project)
+    seed_everything(42)
     dinov3_dir = Path("/content/dinov3") if Path("/content/dinov3").exists() else Path("third_party/dinov3")
     weights_path = Path("checkpoints/dinov3/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth")
+    if not weights_path.exists():
+        raise FileNotFoundError(f"Missing weights: {weights_path.resolve()}")
     model = load_dinov3_backbone(
-        dinov3_dir=dinov3_dir,
-        weights_path=weights_path,
-        device=device,
-        sanity_input_size=512,
-        verbose=True,
-    )
-
-    # snapshot pretrained once
-    pretrained_state = deepcopy(model.state_dict())
-
-    best_val_loss = float("inf")
-    best_epoch = -1
-    best_tag = ""
-
-    r = finetune_screening(
-            model,
-            pretrained_state,
-            loader_train,
-            loader_val,
-            device,
-            epochs=2,
-            lr=1e-3,
-            weight_decay=1e-2,
-            n_layer=1,
+            dinov3_dir=dinov3_dir,
+            weights_path=weights_path,
+            device=device,
+            sanity_input_size=512,
+            verbose=True,
         )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    print(f"Model loaded on device: {device}")
 
-    if r.best_val_loss < best_val_loss:
-        best_val_loss = r.best_val_loss
-        best_epoch = r.best_epoch
-        best_tag = r.layer_name
+    if hasattr(model, 'norm'):
+        print("yes 'model.norm' exist.")
+        print(model.norm)
+    else:
+        print("don't exist")
+    
+    criterion = InfoNCELoss(temperature=0.07).to(device)
+    
+    for param in model.parameters(): param.requires_grad = False
+    for block in model.blocks[-n_layers:]:
+        for param in block.parameters(): param.requires_grad = True
 
-    print(f"\n>>> BEST CONFIG: {best_tag} | Val loss={best_val_loss:.2f} - epoch {best_epoch} <<<\n")
+    for param in model.norm.parameters(): param.requires_grad = True
+
+    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
+                            lr=lr, weight_decay=w_decay)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+
+    scaler = torch.amp.GradScaler('cuda')
+    num_epochs = epochs
+    best_val_loss=float('inf')
+    accumulation_steps = 8  # Simulate batch_size = 8
+
+    for epoch in range(num_epochs):
+        model.train()
+        total_epoch_loss = 0
+        pbar = tqdm(trn_dataloader, desc=f"Epoch {epoch+1}/{num_epochs}[Training]")
+        optimizer.zero_grad()
+
+        model.train()
+        for i, batch in enumerate(pbar):
+
+            # 2. Training Logic 
+            src_img = batch['src_img'].to(device)
+            trg_img = batch['trg_img'].to(device)
+            src_kps = batch['src_kps'].to(device)
+            trg_kps = batch['trg_kps'].to(device)
+            mask    = batch['valid_mask'].to(device)
+
+
+            with torch.amp.autocast('cuda'):
+                output_src = model.forward_features(src_img)
+                output_trg = model.forward_features(trg_img)
+
+                feat_src = output_src['x_norm_patchtokens']
+                feat_trg = output_trg['x_norm_patchtokens']
+
+                B, N, C = feat_src.shape
+                H, W = 32, 32
+                feat_src = feat_src.permute(0, 2, 1).reshape(B, C, H, W)
+                feat_trg = feat_trg.permute(0, 2, 1).reshape(B, C, H, W)
+
+                loss = criterion(feat_src, feat_trg, src_kps, trg_kps, mask)
+                loss = loss / accumulation_steps
+            scaler.scale(loss).backward()
+            if (i + 1) % accumulation_steps == 0 or (i + 1) == len(trn_dataloader):
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+
+            total_epoch_loss += loss.item() * accumulation_steps
+            pbar.set_postfix({'loss': loss.item() * accumulation_steps})
+
+        avg_train_loss = total_epoch_loss / len(trn_dataloader)
+        print(f"Epoch [{epoch+1}/{num_epochs}] Avg Training Loss: {avg_train_loss:.4f}")
+        scheduler.step()
+
+        # Print current LR to verify
+        current_lr = scheduler.get_last_lr()[0]
+        print(f"--> Learning Rate for next epoch: {current_lr:.8f}")
+
+        model.eval()
+        val_loss=0
+        pbar = tqdm(val_dataloader, desc=f"Epoch {epoch+1}/{num_epochs}[Validation]")
+        with torch.no_grad():
+            for i, batch in enumerate(pbar):
+
+                # 2. Validation Logic
+                src_img = batch['src_img'].to(device)
+                trg_img = batch['trg_img'].to(device)
+                src_kps = batch['src_kps'].to(device)
+                trg_kps = batch['trg_kps'].to(device)
+                mask    = batch['valid_mask'].to(device)
+
+                with torch.amp.autocast('cuda'):
+                    output_src = model.forward_features(src_img)
+                    output_trg = model.forward_features(trg_img)
+
+                    feat_src = output_src['x_norm_patchtokens']
+                    feat_trg = output_trg['x_norm_patchtokens']
+
+                    B, N, C = feat_src.shape
+                    H, W = 32, 32
+                    feat_src = feat_src.permute(0, 2, 1).reshape(B, C, H, W)
+                    feat_trg = feat_trg.permute(0, 2, 1).reshape(B, C, H, W)
+
+                    loss = criterion(feat_src, feat_trg, src_kps, trg_kps, mask)
+
+                val_loss += loss.item()
+                pbar.set_postfix({'loss': loss.item()})
+
+            avg_val_loss = val_loss / len(val_dataloader)
+            print(f"Epoch [{epoch+1}/{num_epochs}] Avg Validation Loss: {avg_val_loss:.4f}")
+            if avg_val_loss < best_val_loss:
+                best_val_loss=avg_val_loss
+                save_dir = Path(__file__).resolve().parents[1] / "checkpoints" / "dinov3"
+                save_dir.mkdir(parents=True, exist_ok=True)
+                torch.save(model.state_dict(), save_dir / "best_model.pth")
+                print(f"--> New Best Model Saved! (Loss: {best_val_loss:.4f})")
 
 if __name__ == "__main__":
-    main()
+    EPOCHS = 5
+    LEARNING_RATE = 1e-5
+    WEIGHT_DECAY = 1e-2
+    N_LAYERS_TO_FINE_TUNE = 1
+
+    fine_tuning( epochs=EPOCHS, lr=LEARNING_RATE, w_decay=WEIGHT_DECAY, n_layers=N_LAYERS_TO_FINE_TUNE)

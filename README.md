@@ -12,14 +12,16 @@ Pretrained weights are **not included** in this repository.
 
 Clone the official DINOv3 repository somewhere in your project (suggested location):
 
-```bash
-mkdir -p third_party
-git clone https://github.com/facebookresearch/dinov3.git third_party/dinov3
+```%cd /content
+!test -d dinov3 || git clone https://github.com/facebookresearch/dinov3.git
+%cd /content/dinov3
+!pip -q install einops timm opencv-python torchmetrics fvcore iopath
 ```
 ### DINOv3 pretrained weights
 
 DINOv3 checkpoints require license acceptance and are distributed via **time-limited download links**.  
-Please request access and download the **ViT-B/16 pretrained checkpoint**:
+Please request access and download the **ViT-B/16 pretrained checkpoint** [DINOv3 GitHub Repository](https://github.com/facebookresearch/dinov3)
+:
 ```
 dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth
 ```
