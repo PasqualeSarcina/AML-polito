@@ -25,7 +25,6 @@ from utils.utils_results import CorrespondenceResult
 
 
 class SdFuseDino:
-    # "Repo-like"
     PCA_DIMS = [256, 256, 256]          # s5,s4,s3
     WEIGHT = [1, 1, 1, 1, 1]            # [w_s5,w_s4,w_s3,w_sd,w_dino]
 
@@ -36,6 +35,7 @@ class SdFuseDino:
         self.wsam_beta = args.wsam_beta
         self.device = args.device
         self.base_dir = args.base_dir
+        self.timestep = args.timestep
 
         self.sd = DiftEval(args)
         self.dino = Dinov2Eval(args)
@@ -58,10 +58,10 @@ class SdFuseDino:
         # ----------------------------
         sd_batch = self.sd_preproc(deepcopy(batch))
         sd_src_featmap = self.sd.compute_features(
-            sd_batch["src_img"], sd_batch["src_imname"], sd_batch["category"], up_ft_index=[0, 1, 2], t=100
+            sd_batch["src_img"], sd_batch["src_imname"], sd_batch["category"], up_ft_index=[0, 1, 2], t=self.timestep
         )
         sd_trg_featmap = self.sd.compute_features(
-            sd_batch["trg_img"], sd_batch["trg_imname"], sd_batch["category"], up_ft_index=[0, 1, 2], t=100
+            sd_batch["trg_img"], sd_batch["trg_imname"], sd_batch["category"], up_ft_index=[0, 1, 2], t=self.timestep
         )
 
         # ----------------------------

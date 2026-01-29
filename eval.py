@@ -25,7 +25,8 @@ def build_parser():
     dift.add_argument("--fuse-dino", type=bool, required=False, help="path to custom weights")
     dift.add_argument("--custom-weights", type=str, required=False, help="path to custom DINOv2 weights")
     dift.add_argument("--ensemble-size", type=int, default=4,
-                      help="Number of augmentations for DIFT feature extraction", required=False)
+                      help="Number of noise ensemble for DIFT feature extraction", required=False)
+    dift.add_argument("--timestep", type=int, default=100, required=False, help="Number of diffusion timesteps")
 
     win_soft_argmax = parser.add_argument_group('win_soft_argmax')
     win_soft_argmax.add_argument(

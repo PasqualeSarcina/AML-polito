@@ -29,6 +29,7 @@ class DiftEval:
         self.device = args.device
         self.base_dir = args.base_dir
         self.enseble_size = args.ensemble_size
+        self.timestep = args.timestep
 
         self.featurizer = SDFeaturizer(device=self.device)
 
@@ -59,7 +60,7 @@ class DiftEval:
             prompt_embed=prompt_embed,
             ensemble_size=self.enseble_size,
             up_ft_index=up_ft_index,
-            t=t
+            t=self.timestep
         )  # (1,c,h,w)
         save_featuremap(unet_ft, img_name, self.feat_dir)
         self.processed_img[category_opt].add(img_name)
