@@ -197,7 +197,7 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
                 torch.save(model.state_dict(), save_dir / "best_model.pth")
                 print(f"--> New Best Model Saved! (Loss: {best_val_loss:.4f})")
 
-if __name__ == "__main__":
+
     def main():
         EPOCHS = 5
         LEARNING_RATE = 1e-5
@@ -205,3 +205,6 @@ if __name__ == "__main__":
         N_LAYERS_TO_FINE_TUNE = 1
 
         fine_tuning( epochs=EPOCHS, lr=LEARNING_RATE, w_decay=WEIGHT_DECAY, n_layers=N_LAYERS_TO_FINE_TUNE)
+
+if __name__ == "__main__":
+    main()
