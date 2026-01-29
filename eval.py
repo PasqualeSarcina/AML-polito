@@ -49,6 +49,7 @@ def main():
     args = build_parser().parse_args()
     print("Starting evaluation...")
     using_colab = 'google.colab' in str(get_ipython())
+    print("Using Google Colab:", using_colab)
     args.using_colab = using_colab
 
     if using_colab:
@@ -56,6 +57,8 @@ def main():
     else:
         base_dir = os.path.abspath(os.path.curdir)
     args.base_dir = base_dir
+
+    print("Base directory set to:", args.base_dir)
 
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
