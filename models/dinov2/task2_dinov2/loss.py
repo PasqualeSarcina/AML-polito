@@ -47,7 +47,6 @@ class InfoNCELoss(nn.Module):
         trg_y_grid = trg_y_grid.clamp(0, H - 1)
 
         # Convert Grid (x,y) to Flat Index (0 to 1368)
-        # Formula: y * Width + x
         target_classes = (trg_y_grid * W) + trg_x_grid # [B, K]
 
         # --- 4. Calculate Loss ---
@@ -57,18 +56,12 @@ class InfoNCELoss(nn.Module):
         # Reshape back to [B, K] to apply the mask
         loss = loss.view(B, K)
         
-        # Mask out invalid keypoints (padding or invisible)
         # We only learn from points that exist in both images
         final_loss = (loss * valid_mask).sum() / (valid_mask.sum() + 1e-6)
 
         return final_loss
 
     def _normalize_coords(self, kps, H, W, patch_size):
-        # Map pixel coords [0, 518] to [-1, 1] for grid_sample
-        # Feature map size is 37x37, representing 518x518 pixels
-        
-        # X: (x / width_pixels) * 2 - 1
-        # Y: (y / height_pixels) * 2 - 1
         img_size = H * patch_size # 37 * 14 = 518
         
         norm_kps = kps.clone()
