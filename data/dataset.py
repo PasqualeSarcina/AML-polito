@@ -35,7 +35,7 @@ class CorrespondenceDataset(Dataset):
         if datatype not in ["train", "test", "val"]:
             raise ValueError(f"datatype must be 'train', 'test' or 'val', but got {datatype}.")
 
-        self.dataset_dir = os.path.join(base_dir, '..', 'dataset')
+        self.dataset_dir = os.path.join(base_dir, 'dataset')
         self.dataset = dataset
         self.datatype = datatype
         self.ann_files = None
