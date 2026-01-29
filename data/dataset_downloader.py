@@ -13,7 +13,39 @@ from utils.utils_download import download
 def _extract_zip(zip_path: Path, dest_dir: Path, chunk_size: int = 1024 * 1024):
     zip_path = Path(zip_path)
     dest_dir = Path(dest_dir)
-    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    dest_root = dest_dir.resolve()
+    ensured_dirs: set[Path] = set()
+
+    def safe_resolve(rel_name: str) -> Path:
+        # usa PurePath/Path per normalizzare senza consentire zip-slip
+        out = (dest_dir / rel_name).resolve()
+        if out == dest_root or dest_root in out.parents:
+            return out
+        raise RuntimeError(f"Unsafe path in zip (zip-slip): {rel_name}")
+
+    def ensure_dir(path: Path):
+        """
+        Crea la directory solo se necessario.
+        Auto-healing: se esiste un file dove dovrebbe esserci una directory, lo elimina.
+        """
+        path = path.resolve()
+        if path in ensured_dirs:
+            return
+
+        if path.exists():
+            if path.is_dir():
+                ensured_dirs.add(path)
+                return
+            # conflitto: è un file (o altro), ma ci serve una directory
+            path.unlink()
+
+        path.mkdir(parents=True, exist_ok=True)
+        ensured_dirs.add(path)
+
+    def is_junk(name: str) -> bool:
+        base = Path(name).name
+        return name.startswith("__MACOSX/") or base == ".DS_Store" or base.startswith("._")
 
     with zipfile.ZipFile(zip_path, "r") as z:
         infos = z.infolist()
@@ -22,11 +54,30 @@ def _extract_zip(zip_path: Path, dest_dir: Path, chunk_size: int = 1024 * 1024):
         with tqdm(total=total_bytes, desc="Extracting", unit="B", unit_scale=True) as pbar:
             for info in infos:
                 name = info.filename
+                if not name or is_junk(name):
+                    continue
 
-                # if name.startswith("__MACOSX/") or Path(name).name.startswith("._"):
-                #    continue
+                out_path = safe_resolve(name)
 
-                out_path = dest_dir / name
+                # Directory entry
+                if info.is_dir() or name.endswith("/"):
+                    ensure_dir(out_path)
+                    continue
+
+                # Per i file: crea solo il parent quando serve
+                ensure_dir(out_path.parent)
+
+                # Auto-healing extra: se out_path esiste ma è una directory
+                if out_path.exists() and out_path.is_dir():
+                    # scelta aggressiva: elimino la dir per poter scrivere il file
+                    # se preferisci, sostituisci con raise NotADirectoryError(...)
+                    for child in out_path.rglob("*"):
+                        if child.is_file():
+                            child.unlink()
+                    try:
+                        out_path.rmdir()
+                    except OSError:
+                        pass
 
                 with z.open(info, "r") as src, open(out_path, "wb") as dst:
                     while True:

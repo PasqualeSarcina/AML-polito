@@ -18,7 +18,7 @@ class PFPascalDataset(CorrespondenceDataset):
             download_pfpascal(self.dataset_dir)
 
 
-        pairs_csv = os.path.join(self.pfpascal_dir, f"{datatype}_pairs.csv")
+        pairs_csv = os.path.join(self.pfpascal_dir, "pf-pascal_image_pairs", f"{datatype}_pairs.csv")
 
         with open(pairs_csv, newline="") as f:
             reader = csv.DictReader(f)
