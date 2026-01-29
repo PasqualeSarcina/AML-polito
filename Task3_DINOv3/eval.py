@@ -12,7 +12,7 @@ from data.dataset_DINOv3 import SPairDataset
 from Task3_DINOv3.soft_argmax_windows import soft_argmax_window
 from models.dinov3.model_DINOv3 import load_dinov3_backbone
 
-if __name__ == '__main__':
+def main():
 
     print("--- 1. Checking Data Availability ---")
     using_colab = os.getenv("COLAB_RELEASE_TAG")

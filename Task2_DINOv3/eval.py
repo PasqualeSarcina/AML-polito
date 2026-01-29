@@ -11,7 +11,8 @@ from pathlib import Path
 from models.dinov3.model_DINOv3 import load_dinov3_backbone
 
 
-if __name__ == '__main__':
+def main():
+    global test_dataloader
     print("--- 1. Checking Data Availability ---")
     using_colab = os.getenv("COLAB_RELEASE_TAG")
     print("Using Google Colab:", using_colab)
@@ -51,12 +52,13 @@ if __name__ == '__main__':
     print(f"Test Set Loaded: {len(test_dataset)} images.")
 
     print("\n--- 3. Loading DINOv3 Model ---")
-
+    global device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dinov3_dir = Path("/content/dinov3") if Path("/content/dinov3").exists() else Path("third_party/dinov3")
     project_root = Path(__file__).resolve().parents[1]
     weights_path = project_root / "checkpoints" / "dinov3" / "dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth"
+    global model
     model = load_dinov3_backbone(
         dinov3_dir=dinov3_dir,
         weights_path=weights_path,

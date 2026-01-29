@@ -1,5 +1,5 @@
 import os
-import math 
+import math
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -14,7 +14,7 @@ from data.dataset_DINOv3 import SPairDataset
 from models.dinov3.model_DINOv3 import load_dinov3_backbone
 from Task3_DINOv3.soft_argmax_windows import soft_argmax_window
 
-if __name__ == '__main__':
+def main():
     print("--- 1. Checking Data Availability ---")
     using_colab = os.getenv("COLAB_RELEASE_TAG")
     print("Using Google Colab:", using_colab)
@@ -44,7 +44,7 @@ if __name__ == '__main__':
         test_dataset,
         batch_size=1,
         num_workers=4,
-        shuffle=False,       
+        shuffle=False,
     )
 
     print(f"Test Dataset Size: {len(test_dataset)} samples")
@@ -84,7 +84,7 @@ if __name__ == '__main__':
 
     with torch.no_grad(): # Disable gradients
         for i, data in enumerate(tqdm(test_dataloader, desc="Evaluation")):
-            
+
             category = data['category'][0]
             if category not in class_pck_data:
                 class_pck_data[category] = {
@@ -107,16 +107,16 @@ if __name__ == '__main__':
             img_correct_keypoints_0_1 = 0
             img_correct_keypoints_0_2 = 0
 
-            src_img = data['src_img'].to(device) 
+            src_img = data['src_img'].to(device)
             trg_img = data['trg_img'].to(device)
-            
+
             # We pass the PADDED images
-            dict_src = model.forward_features(src_img) # Python dictionary. 
+            dict_src = model.forward_features(src_img) # Python dictionary.
             dict_trg = model.forward_features(trg_img)
-            
+
             feats_src = dict_src["x_norm_patchtokens"] # [Batch_Size, Num_Patches, Dimension]
-            feats_trg = dict_trg["x_norm_patchtokens"]  
-            
+            feats_trg = dict_trg["x_norm_patchtokens"]
+
             # We keep ORIGINAL dimensions for valid boundary checks
             _, _, H_orig, W_orig = data['src_img'].shape
 
@@ -124,11 +124,11 @@ if __name__ == '__main__':
             w_grid = 32
             h_grid = 32
 
-            kps_list_src = data['src_kps'][0] 
-            trg_kps_gt = data['trg_kps'][0] 
+            kps_list_src = data['src_kps'][0]
+            trg_kps_gt = data['trg_kps'][0]
             valid_mask = data['valid_mask'][0]
-        
-            bbox = data['trg_bbox'][0] 
+
+            bbox = data['trg_bbox'][0]
 
             # extract bbox coordinates
             x_min = bbox[0].item()
@@ -140,12 +140,12 @@ if __name__ == '__main__':
             h_bbox = y_max - y_min
             # then get the max side
             max_side = max(w_bbox, h_bbox)
-            
+
             # Calculate thresholds
             thr_05 = max_side * 0.05
             thr_10 = max_side * 0.10
             thr_20 = max_side * 0.20
-            
+
             # Get threshold value   
             for n_keypoint, keypoint_src in enumerate(kps_list_src):
 
@@ -174,7 +174,7 @@ if __name__ == '__main__':
                 sim_2d = similarity_map.view(h_grid, w_grid)
 
                 y_hat, x_hat = soft_argmax_window(sim_2d)
-                                
+
                 # The logic remains: Coordinate * stride + offset
                 x_pred_pixel = x_hat * patch_size + (patch_size // 2)
                 y_pred_pixel = y_hat * patch_size + (patch_size // 2)
@@ -201,7 +201,7 @@ if __name__ == '__main__':
                 if is_correct_05: img_correct_keypoints_0_05 += 1
                 if is_correct_10: img_correct_keypoints_0_1 += 1
                 if is_correct_20: img_correct_keypoints_0_2 += 1
-            
+
             # Calculate Image-level Accuracy
             if img_tot_keypoints > 0:
                 image_accuracy_0_05 = img_correct_keypoints_0_05 / img_tot_keypoints
@@ -212,7 +212,7 @@ if __name__ == '__main__':
                 class_pck_image[category]['image_value_sum_0_05'] += image_accuracy_0_05
                 class_pck_image[category]['image_value_sum_0_1'] += image_accuracy_0_1
                 class_pck_image[category]['image_value_sum_0_2'] += image_accuracy_0_2
-        
+
     # ==========================================
     # FINAL REPORTING
     # ==========================================
@@ -235,14 +235,14 @@ if __name__ == '__main__':
         c05 = data['correct_kps_0_05']
         c10 = data['correct_kps_0_1']
         c20 = data['correct_kps_0_2']
-        
+
         # Calculate Class Accuracy
         p05 = (c05 / tot) * 100 if tot > 0 else 0
         p10 = (c10 / tot) * 100 if tot > 0 else 0
         p20 = (c20 / tot) * 100 if tot > 0 else 0
-        
+
         print(f"{category:<15} | {p05:<9.2f}% | {p10:<9.2f}% | {p20:<9.2f}%")
-        
+
         # Add to Global Totals
         global_kps_total += tot
         global_kps_correct_05 += c05
@@ -279,14 +279,14 @@ if __name__ == '__main__':
         s05 = data['image_value_sum_0_05']
         s10 = data['image_value_sum_0_1']
         s20 = data['image_value_sum_0_2']
-        
+
         # Calculate Class Accuracy (Mean of image accuracies)
         p05 = (s05 / tot) * 100 if tot > 0 else 0
         p10 = (s10 / tot) * 100 if tot > 0 else 0
         p20 = (s20 / tot) * 100 if tot > 0 else 0
-        
+
         print(f"{category:<15} | {p05:<9.2f}% | {p10:<9.2f}% | {p20:<9.2f}%")
-        
+
         # Add to Global Totals
         global_img_total += tot
         global_img_sum_acc_05 += s05
@@ -305,4 +305,4 @@ if __name__ == '__main__':
 
 
 
-    
+

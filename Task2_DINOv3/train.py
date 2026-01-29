@@ -198,9 +198,10 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
                 print(f"--> New Best Model Saved! (Loss: {best_val_loss:.4f})")
 
 if __name__ == "__main__":
-    EPOCHS = 5
-    LEARNING_RATE = 1e-5
-    WEIGHT_DECAY = 1e-2
-    N_LAYERS_TO_FINE_TUNE = 1
+    def main():
+        EPOCHS = 5
+        LEARNING_RATE = 1e-5
+        WEIGHT_DECAY = 1e-2
+        N_LAYERS_TO_FINE_TUNE = 1
 
-    fine_tuning( epochs=EPOCHS, lr=LEARNING_RATE, w_decay=WEIGHT_DECAY, n_layers=N_LAYERS_TO_FINE_TUNE)
+        fine_tuning( epochs=EPOCHS, lr=LEARNING_RATE, w_decay=WEIGHT_DECAY, n_layers=N_LAYERS_TO_FINE_TUNE)
