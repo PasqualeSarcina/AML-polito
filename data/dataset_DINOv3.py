@@ -151,7 +151,7 @@ class SPairDataset(Dataset):
         return (vis_x & vis_y).astype(np.float32)
 
 
-if __name__ == '__main__':
+def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(current_dir)
     base_dir = os.path.join(project_root, 'dataset', 'SPair-71k_extracted', 'SPair-71k', 'SPair-71k')
