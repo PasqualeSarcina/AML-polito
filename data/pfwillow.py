@@ -42,12 +42,19 @@ class PFWillowDataset(CorrespondenceDataset):
             trg_kps[i - 1, 0] = float(pair_info[f"XB{i}"])
             trg_kps[i - 1, 1] = float(pair_info[f"YB{i}"])
 
-        xmin = trg_kps[:, 0].min()
-        ymin = trg_kps[:, 1].min()
-        xmax = trg_kps[:, 0].max()
-        ymax = trg_kps[:, 1].max()
+        trg_xmin = trg_kps[:, 0].min()
+        trg_ymin = trg_kps[:, 1].min()
+        trg_xmax = trg_kps[:, 0].max()
+        trg_ymax = trg_kps[:, 1].max()
 
-        trg_bbox = np.array([xmin, ymin, xmax, ymax], dtype=np.float32)
+        src_xmin = src_kps[:, 0].min()
+        src_ymin = src_kps[:, 1].min()
+        src_xmax = src_kps[:, 0].max()
+        src_ymax = src_kps[:, 1].max()
+
+        src_bbox = np.array([src_xmin, src_ymin, src_xmax, src_ymax], dtype=np.float32)
+
+        trg_bbox = np.array([trg_xmin, trg_ymin, trg_xmax, trg_ymax], dtype=np.float32)
 
         return {
             "pair_id": idx,
@@ -56,6 +63,7 @@ class PFWillowDataset(CorrespondenceDataset):
             "trg_imname": trg_imname,
             "src_kps": src_kps,  # shape (10, 2)
             "trg_kps": trg_kps,  # shape (10, 2)
+            "src_bndbox": src_bbox,
             "trg_bndbox": trg_bbox
         }
 
