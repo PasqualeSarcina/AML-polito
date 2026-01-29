@@ -14,12 +14,12 @@ def get_transforms(mode='train', img_size=518):
     bbox_params = A.BboxParams(format='pascal_voc', label_fields=['class_labels'])
     if mode == 'train':
         return A.Compose([
-            # Geometric Augmentations (Hard - Moves Keypoints)
+            # Geometric Augmentations (Moves Keypoints)
             A.Resize(height=img_size, width=img_size),
             A.HorizontalFlip(p=0.5),
             A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=15, p=0.5),
             
-            # Pixel Augmentations (Safe - Colors only)
+            # Pixel Augmentations (Colors only)
             A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.5),
             A.GaussianBlur(p=0.1),
             
@@ -102,7 +102,6 @@ class SPairDataset(Dataset):
             # Handle rare case where augmentation might push bbox out of frame (unlikely with Resize)
             trg_bbox_resized = [0, 0, 518, 518]
 
-        # 5. Padding Logic
         MAX_KPS = 40 
         src_kps_padded = np.zeros((MAX_KPS, 2), dtype=np.float32)
         trg_kps_padded = np.zeros((MAX_KPS, 2), dtype=np.float32)
