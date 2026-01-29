@@ -22,17 +22,17 @@ if using_colab:
 else:
     base_dir = os.path.abspath(os.path.curdir)
 data_root = os.path.join(base_dir, 'dataset')
-if data_root is None: 
+if data_root is None:
     print("Error: Dataset not found. Please run utils/setup_data_DINOv3.py or check data location.")
     sys.exit(1)
 
-base_dir = os.path.join(data_root, 'SPair-71k') 
+base_dir = os.path.join(data_root, 'SPair-71k')
 pair_ann_path = os.path.join(base_dir, 'PairAnnotation')
 layout_path = os.path.join(base_dir, 'Layout')
 image_path = os.path.join(base_dir, 'JPEGImages')
 
 train_dataset = SPairDataset(
-    pair_ann_path, layout_path, image_path, 
+    pair_ann_path, layout_path, image_path,
     dataset_size='large', pck_alpha=0.5, datatype='trn'
 )
 
@@ -42,22 +42,23 @@ val_dataset = SPairDataset(
 )
 
 trn_dataloader = DataLoader(
-    train_dataset, 
-    batch_size=1, 
-    shuffle=True, 
-    num_workers=4,           
-    persistent_workers=True, 
-    pin_memory=True          
+    train_dataset,
+    batch_size=1,
+    shuffle=True,
+    num_workers=4,
+    persistent_workers=True,
+    pin_memory=True
 )
 
 val_dataloader = DataLoader(
-    val_dataset, 
-    batch_size=1, 
-    shuffle=False, 
-    num_workers=4,           
-    persistent_workers=True, 
-    pin_memory=True          
+    val_dataset,
+    batch_size=1,
+    shuffle=False,
+    num_workers=4,
+    persistent_workers=True,
+    pin_memory=True
 )
+
 
 def seed_everything(seed=42):
     random.seed(seed)
@@ -67,7 +68,7 @@ def seed_everything(seed=42):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
     print(f">>> SEED SET TO {seed} <<<")
-    
+
 
 def fine_tuning(epochs, lr, w_decay, n_layers):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -77,12 +78,12 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
     if not weights_path.exists():
         raise FileNotFoundError(f"Missing weights: {weights_path.resolve()}")
     model = load_dinov3_backbone(
-            dinov3_dir=dinov3_dir,
-            weights_path=weights_path,
-            device=device,
-            sanity_input_size=512,
-            verbose=True,
-        )
+        dinov3_dir=dinov3_dir,
+        weights_path=weights_path,
+        device=device,
+        sanity_input_size=512,
+        verbose=True,
+    )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     print(f"Model loaded on device: {device}")
@@ -92,9 +93,9 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
         print(model.norm)
     else:
         print("don't exist")
-    
+
     criterion = InfoNCELoss(temperature=0.07).to(device)
-    
+
     for param in model.parameters(): param.requires_grad = False
     for block in model.blocks[-n_layers:]:
         for param in block.parameters(): param.requires_grad = True
@@ -107,13 +108,13 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
 
     scaler = torch.amp.GradScaler('cuda')
     num_epochs = epochs
-    best_val_loss=float('inf')
+    best_val_loss = float('inf')
     accumulation_steps = 8  # Simulate batch_size = 8
 
     for epoch in range(num_epochs):
         model.train()
         total_epoch_loss = 0
-        pbar = tqdm(trn_dataloader, desc=f"Epoch {epoch+1}/{num_epochs}[Training]")
+        pbar = tqdm(trn_dataloader, desc=f"Epoch {epoch + 1}/{num_epochs}[Training]")
         optimizer.zero_grad()
 
         model.train()
@@ -124,8 +125,7 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
             trg_img = batch['trg_img'].to(device)
             src_kps = batch['src_kps'].to(device)
             trg_kps = batch['trg_kps'].to(device)
-            mask    = batch['valid_mask'].to(device)
-
+            mask = batch['valid_mask'].to(device)
 
             with torch.amp.autocast('cuda'):
                 output_src = model.forward_features(src_img)
@@ -151,7 +151,7 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
             pbar.set_postfix({'loss': loss.item() * accumulation_steps})
 
         avg_train_loss = total_epoch_loss / len(trn_dataloader)
-        print(f"Epoch [{epoch+1}/{num_epochs}] Avg Training Loss: {avg_train_loss:.4f}")
+        print(f"Epoch [{epoch + 1}/{num_epochs}] Avg Training Loss: {avg_train_loss:.4f}")
         scheduler.step()
 
         # Print current LR to verify
@@ -159,17 +159,16 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
         print(f"--> Learning Rate for next epoch: {current_lr:.8f}")
 
         model.eval()
-        val_loss=0
-        pbar = tqdm(val_dataloader, desc=f"Epoch {epoch+1}/{num_epochs}[Validation]")
+        val_loss = 0
+        pbar = tqdm(val_dataloader, desc=f"Epoch {epoch + 1}/{num_epochs}[Validation]")
         with torch.no_grad():
             for i, batch in enumerate(pbar):
-
                 # 2. Validation Logic
                 src_img = batch['src_img'].to(device)
                 trg_img = batch['trg_img'].to(device)
                 src_kps = batch['src_kps'].to(device)
                 trg_kps = batch['trg_kps'].to(device)
-                mask    = batch['valid_mask'].to(device)
+                mask = batch['valid_mask'].to(device)
 
                 with torch.amp.autocast('cuda'):
                     output_src = model.forward_features(src_img)
@@ -189,22 +188,23 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
                 pbar.set_postfix({'loss': loss.item()})
 
             avg_val_loss = val_loss / len(val_dataloader)
-            print(f"Epoch [{epoch+1}/{num_epochs}] Avg Validation Loss: {avg_val_loss:.4f}")
+            print(f"Epoch [{epoch + 1}/{num_epochs}] Avg Validation Loss: {avg_val_loss:.4f}")
             if avg_val_loss < best_val_loss:
-                best_val_loss=avg_val_loss
+                best_val_loss = avg_val_loss
                 save_dir = Path(__file__).resolve().parents[1] / "checkpoints" / "dinov3"
                 save_dir.mkdir(parents=True, exist_ok=True)
                 torch.save(model.state_dict(), save_dir / "best_model.pth")
                 print(f"--> New Best Model Saved! (Loss: {best_val_loss:.4f})")
 
 
-    def main():
-        EPOCHS = 5
-        LEARNING_RATE = 1e-5
-        WEIGHT_DECAY = 1e-2
-        N_LAYERS_TO_FINE_TUNE = 1
+def main():
+    EPOCHS = 5
+    LEARNING_RATE = 1e-5
+    WEIGHT_DECAY = 1e-2
+    N_LAYERS_TO_FINE_TUNE = 1
 
-        fine_tuning( epochs=EPOCHS, lr=LEARNING_RATE, w_decay=WEIGHT_DECAY, n_layers=N_LAYERS_TO_FINE_TUNE)
+    fine_tuning(epochs=EPOCHS, lr=LEARNING_RATE, w_decay=WEIGHT_DECAY, n_layers=N_LAYERS_TO_FINE_TUNE)
+
 
 if __name__ == "__main__":
     main()
