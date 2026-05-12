@@ -4,7 +4,7 @@ import numpy as np
 # Epochs (X-axis)
 epochs = [1, 2, 3, 4, 5]
 
-# EXPERIMENT 1: (LR=1e-4)
+# EXPERIMENT 1: (LR=1e-4) n_layers = 2
 # (Inferred Epoch 1 from previous context, rest are from your logs)
 exp1_train = [2.0200, 1.3478, 0.9675, 0.8298, 0.7583]
 exp1_val   = [3.5500, 3.9255, 4.4000, 4.2102, 4.5407]

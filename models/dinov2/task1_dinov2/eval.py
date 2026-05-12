@@ -79,7 +79,7 @@ with torch.no_grad(): # Disable gradients
         img_correct_keypoints_0_1 = 0
         img_correct_keypoints_0_2 = 0
 
-        src_img = data['src_img'].to(device) # torch.Size([1, 3, 333, 500])
+        src_img = data['src_img'].to(device) # torch.Size([1, 3, 518, 518])
        
         trg_img = data['trg_img'].to(device)
 

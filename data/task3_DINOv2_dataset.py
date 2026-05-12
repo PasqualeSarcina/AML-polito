@@ -60,7 +60,6 @@ class SPairDataset(Dataset):
         else:
             raise ValueError(f"Unsupported datatype: {datatype}")
 
-
         self.transform = get_transforms(mode=mode, img_size=518)
 
     def __len__(self):
@@ -91,6 +90,8 @@ class SPairDataset(Dataset):
         # 4. Apply Transforms
         src_aug = self.transform(image=src_img_raw, keypoints=src_kps, bboxes=[], class_labels=[] )
         src_tensor = src_aug['image']
+
+        # is a matrix number of keypoints x 2 
         src_kps_aug = np.array(src_aug['keypoints'])
         
         trg_aug = self.transform(image=trg_img_raw, keypoints=trg_kps, bboxes=[trg_bbox_raw], class_labels=["target_obj"] )
@@ -102,10 +103,12 @@ class SPairDataset(Dataset):
             # Handle rare case where augmentation might push bbox out of frame (unlikely with Resize)
             trg_bbox_resized = [0, 0, 518, 518]
 
+        # each keypoint is rappresented by x and y coordinates, is a matrix 40 x 2
         MAX_KPS = 40 
         src_kps_padded = np.zeros((MAX_KPS, 2), dtype=np.float32)
         trg_kps_padded = np.zeros((MAX_KPS, 2), dtype=np.float32)
         
+        # if we have more than 40 keypoints we take only 40 
         n_src = min(len(src_kps_aug), MAX_KPS)
         n_trg = min(len(trg_kps_aug), MAX_KPS)
         
@@ -117,9 +120,12 @@ class SPairDataset(Dataset):
         trg_vis = self._check_visibility(trg_kps_padded, 518, 518)
         
         valid_mask = np.zeros(MAX_KPS, dtype=np.float32)
+
         common_len = min(n_src, n_trg)
+        # logical AND between 1 and 0 values
         valid_mask[:common_len] = src_vis[:common_len] * trg_vis[:common_len]
 
+        # python list
         return {
             'src_img': src_tensor,
             'trg_img': trg_tensor,
@@ -130,6 +136,7 @@ class SPairDataset(Dataset):
             'category': category
         }
 
+    # array of 1 and 0
     def _check_visibility(self, kps, h, w):
         x = kps[:, 0]
         y = kps[:, 1]

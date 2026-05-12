@@ -26,7 +26,7 @@ class InfoNCELoss(nn.Module):
         
         # Sample: [B, C, H, W] + [B, K, 1, 2] -> [B, C, K, 1]
         desc_src = F.grid_sample(feat_src, src_norm, align_corners=True, mode='bilinear')
-        desc_src = desc_src.squeeze(-1).permute(0, 2, 1) # [B, K, C]
+        desc_src = desc_src.squeeze(-1).permute(0, 2, 1) # [B, K, C] : every keypoint now has is own feature vector (768)
         
         # Normalize vectors (Important for Cosine Sim!)
         desc_src = F.normalize(desc_src, dim=-1)
