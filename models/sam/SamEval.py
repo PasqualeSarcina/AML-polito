@@ -90,7 +90,7 @@ class SamEval:
                 src_emb = self._compute_features(batch["src_img"], batch["src_orig_size"], src_imname, category)
                 trg_emb = self._compute_features(batch["trg_img"], batch["trg_orig_size"], trg_imname, category)
 
-                # Keypoints (N,2) in pixel originali, ordine (x,y)
+                # Keypoints (N,2) in pixel resized, ordine (x,y)
                 src_kps = batch["src_kps"].to(self.device)
                 trg_kps = batch["trg_kps"].to(self.device)
 
