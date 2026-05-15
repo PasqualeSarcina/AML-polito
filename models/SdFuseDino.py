@@ -25,8 +25,7 @@ class SdFuseDino:
 
     def __init__(self, args):
         self.dataset_name = args.dataset
-        self.win_soft_argmax = args.win_soft_argmax
-        self.wsam_win_size = args.wsam_win_size
+        self.wsam_win_radius = args.wsam_win_radius
         self.wsam_beta = args.wsam_beta
         self.device = args.device
         self.base_dir = args.base_dir
@@ -247,9 +246,9 @@ class SdFuseDino:
                     sim_1d = -(diff * diff).sum(dim=-1)  # [P]
                     sim2d = sim_1d.view(self.H, self.W)  # [H,W]
 
-                    if self.win_soft_argmax:
+                    if self.wsam_win_radius > 0:
                         y_tok, x_tok = soft_argmax_window(
-                            sim2d, window_radius=self.wsam_win_size, temperature=self.wsam_beta
+                            sim2d, window_radius=self.wsam_win_radius, temperature=self.wsam_beta
                         )
                     else:
                         y_tok, x_tok = soft_argmax_window(sim2d, window_radius=1)

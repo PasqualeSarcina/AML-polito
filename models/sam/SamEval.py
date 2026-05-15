@@ -20,8 +20,7 @@ class SamEval:
     def __init__(self, args):
         self.dataset_name = args.dataset
         self.custom_weights = args.custom_weights
-        self.win_soft_argmax = args.win_soft_argmax
-        self.wsam_win_size = args.wsam_win_size
+        self.wsam_win_radius = args.wsam_win_radius
         self.wsam_beta = args.wsam_beta
         self.device = args.device
         self.base_dir = args.base_dir
@@ -150,8 +149,8 @@ class SamEval:
                     sim_2d = sim.view(hv_t, wv_t)  # [hv_t, wv_t]
 
                     # soft-argmax o argmax classico
-                    if self.win_soft_argmax:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=self.wsam_win_size,
+                    if self.wsam_win_radius > 0:
+                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=self.wsam_win_radius,
                                                                         temperature=self.wsam_beta)
                     else:
                         y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=1)

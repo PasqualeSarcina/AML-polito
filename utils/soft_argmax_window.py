@@ -4,45 +4,51 @@ import torch
 def soft_argmax_window(sim_map_2d, window_radius=3, temperature=0.05):
     """
     Args:
-        sim_map_2d: Tensor shape (H, W) containing similarity scores.
-        window_radius: How many neighbors to look at (e.g., 3).
-        temperature: Sharpening factor. Higher = closer to hard argmax.
+        sim_map_2d: 2D similarity map of shape (H, W) containing scalar similarity scores.
+        window_radius: Radius of the local window centered at the hard argmax peak. A window radius of 3 results in a
+            7x7 window. If 0, no window is applied and the hard argmax coordinates are returned.
+        temperature: Sharpening factor. Lower = closer to hard argmax.
     Returns:
         y_soft, x_soft: Float coordinates on the grid.
+    Notes:
+        - If window_radius=0, the function returns the hard peak coordinates as floats.
     """
     H, W = sim_map_2d.shape
 
-    # 1. Find the Hard Peak (Integer)
+    # Find the "hard" peak with argmax
     flattened = sim_map_2d.view(-1)
     idx = torch.argmax(flattened)
     y_hard = idx // W
     x_hard = idx % W
 
-    if window_radius == 1:
+    # Return the peak patch coordinates as floats if no window is applied
+    if window_radius == 0:
         return y_hard.float(), x_hard.float()
 
-    # 2. Define the Window around the peak
+    # Define the Window around the peak
     y_min = max(0, y_hard - window_radius)
     y_max = min(H, y_hard + window_radius + 1)
     x_min = max(0, x_hard - window_radius)
     x_max = min(W, x_hard + window_radius + 1)
 
-    # 3. Crop the window
+    # Crop the similarity map to the window around the hard peak
     window = sim_map_2d[y_min:y_max, x_min:x_max]
 
-    # 4. Convert Scores to Probabilities (Softmax)
-    # We subtract max for numerical stability, then multiply by temperature
-    # Cosine similarity is usually -1 to 1. We scale it up so Softmax isn't too flat.
-    # 1. Flatten the window to 1D so Softmax considers ALL pixels together
+    # Convert Scores to Probabilities with Softmax
+    # We subtract the maximum score for numerical stability before applying softmax:
+    # this keeps the largest value equal to 0 and avoids very large exponentials, without changing the final softmax probabilities.
+    # Flatten the window to 1D so Softmax considers ALL pixels together
     flat_input = ((window - window.max()) / temperature).view(-1)
-
-    # 2. Apply Softmax on the flat array (dim=0)
+    # Apply Softmax on the flat array (dim=0)
     flat_weights = torch.nn.functional.softmax(flat_input, dim=0)
 
-    # 3. Reshape back to the original 2D square shape
+    # Reshape back to the original 2D square shape
     weights = flat_weights.view(window.shape)
-    # 5. Calculate Center of Mass (Weighted Sum)
-    # Create a grid of coordinates for the window
+
+    # Compute the center of mass of the similarity map via a weighted sum.
+    # Create a 2D grid of absolute coordinates for the selected window.
+    # local_y stores the y-coordinate for each cell in the window.
+    # local_x stores the x-coordinate for each cell in the window.
     device = sim_map_2d.device
     local_y, local_x = torch.meshgrid(
         torch.arange(y_min, y_max, device=device).float(),
@@ -50,6 +56,7 @@ def soft_argmax_window(sim_map_2d, window_radius=3, temperature=0.05):
         indexing='ij'
     )
 
+    # Weighted average of coordinates
     y_soft = torch.sum(weights * local_y)
     x_soft = torch.sum(weights * local_x)
 
