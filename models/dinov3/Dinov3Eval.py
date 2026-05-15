@@ -153,11 +153,11 @@ class Dinov3Eval:
                     src_feat = feats_src[y_idx, x_idx]  # (C,)
                     sim_2d = (feats_trg * src_feat).sum(dim=-1)
 
-                    if self.wsam_win_radius > 0:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=self.wsam_win_radius,
-                                                                        temperature=self.wsam_beta)
-                    else:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=1)
+                    y_pred_patch, x_pred_patch = soft_argmax_window(
+                        sim_2d,
+                        window_radius=self.wsam_win_radius,
+                        temperature=self.wsam_beta
+                    )
 
                     x_pred, y_pred = patch_idx_to_pixel((x_pred_patch, y_pred_patch), stride=PATCH)
 

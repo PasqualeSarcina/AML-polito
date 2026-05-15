@@ -246,12 +246,11 @@ class SdFuseDino:
                     sim_1d = -(diff * diff).sum(dim=-1)  # [P]
                     sim2d = sim_1d.view(self.H, self.W)  # [H,W]
 
-                    if self.wsam_win_radius > 0:
-                        y_tok, x_tok = soft_argmax_window(
-                            sim2d, window_radius=self.wsam_win_radius, temperature=self.wsam_beta
-                        )
-                    else:
-                        y_tok, x_tok = soft_argmax_window(sim2d, window_radius=1)
+                    y_pred_patch, x_pred_patch = soft_argmax_window(
+                        sim_2d,
+                        window_radius=self.wsam_win_radius,
+                        temperature=self.wsam_beta
+                    )
 
                     x_pred, y_pred = patch_idx_to_pixel((x_tok, y_tok), stride=self.sd_stride)
 

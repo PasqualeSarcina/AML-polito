@@ -118,15 +118,12 @@ class DiftEval:
                     sim2d = torch.nn.functional.cosine_similarity(trg_ft[0], src_vec, dim=0)  # [48,48]
 
                     # ---- pred token coords (y,x) ----
-                    if self.wsam_win_radius > 0:
-                        # la tua soft_argmax_window ritorna (y,x)
-                        y_tok, x_tok = soft_argmax_window(
-                            sim2d,
-                            window_radius=self.wsam_win_radius,
-                            temperature=self.wsam_beta
-                        )
-                    else:
-                        y_tok, x_tok = soft_argmax_window(sim2d, window_radius=1)
+
+                    y_tok, x_tok = soft_argmax_window(
+                        sim2d,
+                        window_radius=self.wsam_win_radius,
+                        temperature=self.wsam_beta
+                    )
 
                     # ---- token -> pixel nello spazio 768 (centro patch) ----
                     x_pred, y_pred = patch_idx_to_pixel((x_tok, y_tok), stride=PATCH)

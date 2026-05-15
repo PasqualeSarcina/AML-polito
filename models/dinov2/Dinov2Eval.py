@@ -127,11 +127,12 @@ class Dinov2Eval:
                     )  # (1369,)
                     sim_2d = sim_1d.view(h_grid, w_grid)  # (37,37)
 
-                    if self.wsam_win_radius > 0:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=self.wsam_win_radius,
-                                                                        temperature=self.wsam_beta)  # ritorna x,y
-                    else:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=1)
+
+                    y_pred_patch, x_pred_patch = soft_argmax_window(
+                        sim_2d,
+                        window_radius=self.wsam_win_radius,
+                        temperature=self.wsam_beta
+                    )
 
                     # --- 518 -> ORIG target  ---
                     x_pred, y_pred = patch_idx_to_pixel((x_pred_patch, y_pred_patch), stride=patch_size)
