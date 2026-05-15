@@ -1,7 +1,7 @@
 import torch
 
 
-def soft_argmax_window(sim_map_2d, window_radius=3, temperature=20):
+def soft_argmax_window(sim_map_2d, window_radius=3, temperature=0.05):
     """
     Args:
         sim_map_2d: Tensor shape (H, W) containing similarity scores.
@@ -34,7 +34,7 @@ def soft_argmax_window(sim_map_2d, window_radius=3, temperature=20):
     # We subtract max for numerical stability, then multiply by temperature
     # Cosine similarity is usually -1 to 1. We scale it up so Softmax isn't too flat.
     # 1. Flatten the window to 1D so Softmax considers ALL pixels together
-    flat_input = ((window - window.max()) * temperature).view(-1)
+    flat_input = ((window - window.max()) / temperature).view(-1)
 
     # 2. Apply Softmax on the flat array (dim=0)
     flat_weights = torch.nn.functional.softmax(flat_input, dim=0)
