@@ -24,7 +24,7 @@ class DiftEval:
     def __init__(self, args):
         self.dataset_name = args.dataset
         self.wsam_win_radius = args.wsam_win_radius
-        self.wsam_beta = args.wsam_beta
+        self.wsam_temp = args.wsam_temp
         self.device = args.device
         self.base_dir = args.base_dir
         self.enseble_size = args.ensemble_size
@@ -122,7 +122,7 @@ class DiftEval:
                     y_tok, x_tok = soft_argmax_window(
                         sim2d,
                         window_radius=self.wsam_win_radius,
-                        temperature=self.wsam_beta
+                        temperature=self.wsam_temp
                     )
 
                     # ---- token -> pixel nello spazio 768 (centro patch) ----

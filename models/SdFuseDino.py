@@ -247,12 +247,12 @@ class SdFuseDino:
                     sim2d = sim_1d.view(self.H, self.W)  # [H,W]
 
                     y_pred_patch, x_pred_patch = soft_argmax_window(
-                        sim_2d,
+                        sim2d,
                         window_radius=self.wsam_win_radius,
                         temperature=self.wsam_beta
                     )
 
-                    x_pred, y_pred = patch_idx_to_pixel((x_tok, y_tok), stride=self.sd_stride)
+                    x_pred, y_pred = patch_idx_to_pixel((x_pred_patch, y_pred_patch), stride=self.sd_stride)
 
                     dx = float(x_pred) - float(kp_trg[0].item())
                     dy = float(y_pred) - float(kp_trg[1].item())
