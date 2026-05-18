@@ -1,5 +1,6 @@
 from typing import Any, Dict
 import torch
+import torch.nn.functional as F
 
 
 class PreProcess(object):
@@ -13,7 +14,9 @@ class PreProcess(object):
             # original size coerente con kps/bbox (prima del resize SAM)
             H, W = int(img.shape[-2]), int(img.shape[-1])
 
-            img_resized = self.transform.apply_image_torch(img.unsqueeze(0))  # BCHW
+            #img_resized = self.transform.apply_image_torch(img.unsqueeze(0))  # BCHW
+            new_h, new_w = self.transform.get_preprocess_shape(H, W, 1024)
+            img_resized= F.interpolate(img.unsqueeze(0), (new_h, new_w), mode="bilinear", align_corners=False, antialias=True)
 
             # scala coords e bbox con le utilità SAM
             sample[f"{key}_kps"] = self.transform.apply_coords_torch(
