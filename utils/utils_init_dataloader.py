@@ -1,10 +1,10 @@
 from typing import Literal
-
 from torch.utils.data import DataLoader
+import torch
 
 
 def init_dataloader(dataset_name: Literal['spair-71k', 'pf-pascal', 'pf-willow', 'ap-10k'], base_dir,
-                 datatype: Literal["train", "test", "val"], transform=None, num_workers=4):
+                 datatype: Literal["train", "test", "val"], transform=None, num_workers=0):
     match dataset_name:
         case 'spair-71k':
             from data.spair import SPairDataset

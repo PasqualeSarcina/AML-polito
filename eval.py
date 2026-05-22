@@ -29,15 +29,9 @@ def build_parser():
     dift.add_argument("--timestep", type=int, default=100, required=False, help="Number of diffusion timesteps")
 
     win_soft_argmax = parser.add_argument_group('win_soft_argmax')
-    win_soft_argmax.add_argument(
-        '--win-soft-argmax',
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help='Use windowed soft argmax for correspondence regression',
-    )
-    win_soft_argmax.add_argument('--wsam-win-size', type=int, default=3, help='Window size for windowed soft argmax')
-    win_soft_argmax.add_argument('--wsam-beta', type=float, default=20.0,
-                                 help='Inverse temperature for windowed soft argmax')
+    win_soft_argmax.add_argument('--wsam-win-radius', type=int, default=3, help='Window radius for windowed soft argmax')
+    win_soft_argmax.add_argument('--wsam-temp', type=float, default=0.05,
+                                 help='Temperature for windowed soft argmax')
 
     dataset = parser.add_argument('--dataset', type=str, default='spair-71k',
                                   choices=['pf-pascal', 'pf-willow', 'spair-71k', 'ap-10k'])

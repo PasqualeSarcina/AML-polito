@@ -3,9 +3,11 @@ from collections import defaultdict
 from pathlib import Path
 
 import torch
-from tqdm import tqdm
 import torch.nn.functional as F
+from tqdm import tqdm
+
 from models.dinov3.PreProcess import PreProcess
+from models.dinov3.model_DINOv3 import load_dinov3_backbone
 from utils.soft_argmax_window import soft_argmax_window
 from utils.utils_convert import pixel_to_patch_idx, patch_idx_to_pixel
 from utils.utils_featuremaps import load_featuremap, save_featuremap
@@ -14,171 +16,377 @@ from utils.utils_results import CorrespondenceResult
 
 
 class Dinov3Eval:
+    """
+    DINOv3 evaluation for semantic correspondence.
+
+    Pipeline:
+        image -> resize 512x512 -> DINOv3 ViT-B/16
+        patch size = 16
+        feature grid = 32x32
+        keypoints and bounding boxes are resized by PreProcess
+        PCK thresholds are computed on the resized target bounding box
+    """
+
     def __init__(self, args):
+        """
+        Initialize DINOv3 evaluation settings, model, dataloader, and feature cache.
+        """
         self.dataset_name = args.dataset
         self.custom_weights = args.custom_weights
-        self.win_soft_argmax = args.win_soft_argmax
-        self.wsam_win_size = args.wsam_win_size
-        self.wsam_beta = args.wsam_beta
+
+        self.wsam_win_radius = int(getattr(args, "wsam_win_radius", 0))
+        self.wsam_temp = float(getattr(args, "wsam_temp", 0.05))
+
+        self.win_soft_argmax = self.wsam_win_radius > 0
+
+        print(
+            f"[DINOv3 Eval] win_soft_argmax={self.win_soft_argmax} | "
+            f"radius={self.wsam_win_radius} | temp={self.wsam_temp}"
+        )
+
         self.device = args.device
         self.base_dir = args.base_dir
 
+        self.patch_size = 16
+        self.input_size = 512
+
         self._init_model()
 
-        transform = PreProcess()
-        self.dataset, self.dataloader = init_dataloader(self.dataset_name, base_dir=self.base_dir, datatype='test',
-                                                        transform=transform)
+        transform = PreProcess(out_dim=(self.input_size, self.input_size))
 
-        self.feat_dir = Path(self.base_dir) / "data" / "features" / "dinov3"
+        self.dataset, self.dataloader = init_dataloader(
+            self.dataset_name,
+            base_dir=self.base_dir,
+            datatype="test",
+            transform=transform,
+        )
+
+        if self.custom_weights is None:
+            run_name = "pretrained"
+        else:
+            run_name = Path(self.custom_weights).stem
+
+        self.feat_dir = (
+            Path(self.base_dir)
+            / "data"
+            / "features"
+            / "dinov3"
+            / run_name
+        )
+
         self.processed_img = defaultdict(set)
 
     def _init_model(self):
-        if self.custom_weights is not None:
-            checkpoint = self.custom_weights
-        else:
-            checkpoint = Path(self.base_dir) / "checkpoints" / "dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth"
+        """
+        Load the DINOv3 ViT-B/16 backbone and optional custom fine-tuned weights.
+        """
+        pretrained_checkpoint = (
+            Path(self.base_dir)
+            / "checkpoints"
+            / "dinov3"
+            / "dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth"
+        )
 
-        model = torch.hub.load('facebookresearch/dinov3', 'dinov3_vitb16', weights=str(checkpoint))
+        if not pretrained_checkpoint.exists():
+            pretrained_checkpoint = (
+                Path(self.base_dir)
+                / "checkpoints"
+                / "dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth"
+            )
+
+        if not pretrained_checkpoint.exists():
+            raise FileNotFoundError(
+                f"DINOv3 pretrained checkpoint not found: {pretrained_checkpoint}"
+            )
+
+        dinov3_dir = Path(self.base_dir) / "third_party" / "dinov3"
+
+        model = load_dinov3_backbone(
+            dinov3_dir=dinov3_dir,
+            weights_path=pretrained_checkpoint,
+            device=self.device,
+            sanity_input_size=self.input_size,
+            verbose=True,
+        )
+
+        if self.custom_weights is not None:
+            checkpoint = torch.load(self.custom_weights, map_location=self.device)
+
+            if isinstance(checkpoint, dict) and "model" in checkpoint:
+                state_dict = checkpoint["model"]
+            elif isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+                state_dict = checkpoint["state_dict"]
+            else:
+                state_dict = checkpoint
+
+            state_dict = {
+                k.replace("module.", "").replace("model.", ""): v
+                for k, v in state_dict.items()
+            }
+
+            msg = model.load_state_dict(state_dict, strict=False)
+
+            print(f"Loaded custom fine-tuned weights from: {self.custom_weights}")
+            print(f"Missing keys: {len(msg.missing_keys)}")
+            print(msg.missing_keys)
+            print(f"Unexpected keys: {len(msg.unexpected_keys)}")
+            print(msg.unexpected_keys)
 
         self.model = model.to(self.device).eval()
 
         for param in self.model.parameters():
             param.requires_grad_(False)
 
-    def compute_features(self, img_tensor: torch.Tensor, img_name: str, category: str) -> torch.Tensor:
-        PATCH = 16
+    @staticmethod
+    def _safe_tokens(out: torch.Tensor) -> torch.Tensor:
+        """
+        Validate and return patch tokens in [B, N, C] format.
+        """
+        if isinstance(out, (tuple, list)):
+            out = out[0]
+
+        if not torch.is_tensor(out) or out.ndim != 3:
+            raise RuntimeError(
+                f"Unexpected tokens output: {type(out)} "
+                f"shape={getattr(out, 'shape', None)}"
+            )
+
+        return out
+
+    @staticmethod
+    def _tokens_to_featuremap(
+        tokens_bnc: torch.Tensor,
+        h_grid: int,
+        w_grid: int,
+    ) -> torch.Tensor:
+        """
+        Convert DINOv3 patch tokens [1, N, C] into a normalized feature map [H, W, C].
+        """
+
+        if tokens_bnc.shape[0] != 1:
+            raise RuntimeError(
+                f"DINOv3 evaluation expects batch size 1, got {tokens_bnc.shape[0]}"
+            )
+
+        tok = tokens_bnc.squeeze(0)
+
+        n_patches = h_grid * w_grid
+
+        if tok.shape[0] < n_patches:
+            raise RuntimeError(
+                f"Ntok={tok.shape[0]} < Npatch={n_patches} "
+                f"(h_grid={h_grid}, w_grid={w_grid})"
+            )
+
+        patch_tok = tok[-n_patches:]
+        featmap = patch_tok.view(h_grid, w_grid, -1)
+
+        return F.normalize(featmap, dim=-1)
+
+    def _cache_name(self, img_name: str, category: str) -> str:
+        """
+        Build a category-aware cache filename to avoid feature collisions.
+        """
+
+        safe_category = str(category).replace("/", "_")
+        safe_img_name = str(img_name).replace("/", "_").replace("\\", "_")
+
+        return f"{safe_category}__{safe_img_name}"
+
+    def compute_features(
+    self,
+    img_tensor: torch.Tensor,
+    img_name: str,
+    category: str,
+    ) -> torch.Tensor:
+        """
+        Load cached features if available; otherwise extract and save normalized
+        DINOv3 feature maps.
+
+        Cache path:
+            data/features/dinov3/<run_name>/<category>__<image_name>.pt
+        """
+
         if self.dataset_name == "ap-10k":
             category = "all"
 
-        # ----------------------------
-        # helper: safe_tokens + tokens_to_featuremap
-        # ----------------------------
-        def safe_tokens(out):
-            if isinstance(out, (tuple, list)):
-                out = out[0]
-            if (not torch.is_tensor(out)) or out.ndim != 3:
-                raise RuntimeError(f"Unexpected tokens output: {type(out)} shape={getattr(out, 'shape', None)}")
-            return out  # (B, N, C)
+        cache_name = self._cache_name(img_name, category)
+        cache_path = self.feat_dir / f"{cache_name}.pt"
 
-        def tokens_to_featuremap(tokens_bnc: torch.Tensor, h_grid: int, w_grid: int) -> torch.Tensor:
-            tok = tokens_bnc.squeeze(0)  # (Ntok, C)  [assume B=1]
-            Npatch = h_grid * w_grid
-            if tok.shape[0] < Npatch:
-                raise RuntimeError(f"Ntok={tok.shape[0]} < Npatch={Npatch} (h_grid={h_grid}, w_grid={w_grid})")
-            patch_tok = tok[-Npatch:]  # drop CLS/register if present
-            Ft = patch_tok.view(h_grid, w_grid, -1)  # (h_grid, w_grid, C)
-            return F.normalize(Ft, dim=-1)
+        # ------------------------------------------------------------------
+        # 1) Try to load cached feature map
+        # ------------------------------------------------------------------
+        if cache_path.exists():
+            try:
+                self.processed_img[category].add(cache_name)
+                return load_featuremap(
+                    cache_name,
+                    self.feat_dir,
+                    device=self.device,
+                )
+            except Exception as e:
+                print(
+                    f"[DINOv3 Eval] Warning: could not load cached feature "
+                    f"{cache_path}. Recomputing it. Error: {e}"
+                )
+                try:
+                    cache_path.unlink()
+                except Exception:
+                    pass
 
-        # ----------------------------
-        # load cache
-        # ----------------------------
-        if img_name in self.processed_img[category]:
-            return load_featuremap(img_name, self.feat_dir, device=self.device)
-
-        # ----------------------------
-        # forward
-        # ----------------------------
-        # img_tensor is expected to be CHW (not batched). If your PreProcess already returns BCHW,
-        # remove the unsqueeze(0) below.
+        # ------------------------------------------------------------------
+        # 2) Compute feature map
+        # ------------------------------------------------------------------
         x = img_tensor.to(self.device)
-        if x.ndim == 3:  # CHW
-            x = x.unsqueeze(0)  # -> BCHW
+
+        if x.ndim == 3:
+            x = x.unsqueeze(0)
         elif x.ndim != 4:
-            raise RuntimeError(f"Unexpected img_tensor shape {x.shape}, expected CHW or BCHW")
+            raise RuntimeError(
+                f"Unexpected img_tensor shape {x.shape}, expected CHW or BCHW"
+            )
 
-        dict_out = self.model.forward_features(x)
+        _, _, h_img, w_img = x.shape
 
-        # take patch tokens and make them safe
-        tokens = safe_tokens(dict_out["x_norm_patchtokens"])  # (B, N, C)
+        if h_img != self.input_size or w_img != self.input_size:
+            raise RuntimeError(
+                f"DINOv3 fixed-resize pipeline expects "
+                f"{self.input_size}x{self.input_size}, but got {h_img}x{w_img}."
+            )
 
-        # ----------------------------
-        # grid size from model input resolution
-        # (must match how the model sees the image!)
-        # ----------------------------
-        H, W = x.shape[-2], x.shape[-1]
-        h_grid = (H + PATCH - 1) // PATCH
-        w_grid = (W + PATCH - 1) // PATCH
+        h_grid = h_img // self.patch_size
+        w_grid = w_img // self.patch_size
 
-        featmap = tokens_to_featuremap(tokens, h_grid, w_grid)  # (h_grid, w_grid, C)
+        with torch.no_grad():
+            dict_out = self.model.forward_features(x)
 
-        # ----------------------------
-        # save cache
-        # ----------------------------
-        self.processed_img[category].add(img_name)
-        save_featuremap(featmap, img_name, self.feat_dir)
+        if "x_norm_patchtokens" not in dict_out:
+            raise RuntimeError(
+                "DINOv3 forward_features output does not contain 'x_norm_patchtokens'."
+            )
+
+        tokens = self._safe_tokens(dict_out["x_norm_patchtokens"])
+        featmap = self._tokens_to_featuremap(tokens, h_grid, w_grid)
+
+        # ------------------------------------------------------------------
+        # 3) Save feature map to cache
+        # ------------------------------------------------------------------
+        self.processed_img[category].add(cache_name)
+
+        try:
+            save_featuremap(
+                featmap,
+                cache_name,
+                self.feat_dir,
+            )
+        except Exception as e:
+            print(
+                f"[DINOv3 Eval] Warning: could not save cached feature "
+                f"{cache_path}. Evaluation will continue. Error: {e}"
+            )
 
         return featmap
 
     def evaluate(self) -> list[CorrespondenceResult]:
+        """
+        Run source-to-target keypoint matching and return per-pair correspondence results.
+        """
         results = []
 
-        PATCH = 16
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         with torch.no_grad():
-            for batch in tqdm(self.dataloader, total=len(self.dataloader),
-                              desc=f"Computing correspondences with DINOv3 on {self.dataset_name}",
-                              smoothing=0.1, mininterval=0.7, maxinterval=2.0):
+            for batch in tqdm(
+                self.dataloader,
+                total=len(self.dataloader),
+                desc=f"Computing correspondences with DINOv3 on {self.dataset_name}",
+                smoothing=0.1,
+                mininterval=0.7,
+                maxinterval=2.0,
+            ):
                 category = batch["category"]
 
-                feats_src = self.compute_features(batch["src_img"], batch["src_imname"], category)  # Resized image
-                feats_trg = self.compute_features(batch["trg_img"], batch["trg_imname"], category)  # Resized image
+                feats_src = self.compute_features(
+                    batch["src_img"],
+                    batch["src_imname"],
+                    category,
+                )
 
-                src_kps = batch["src_kps"].to(self.device)  # (N,2)
-                trg_kps = batch["trg_kps"].to(self.device)  # (N,2)
+                feats_trg = self.compute_features(
+                    batch["trg_img"],
+                    batch["trg_imname"],
+                    category,
+                )
 
-                _, Hs_pad, Ws_pad = batch["src_imsize"]
-                _, Ht_pad, Wt_pad = batch["trg_imsize"]
+                src_kps = batch["src_kps"].to(self.device)
+                trg_kps = batch["trg_kps"].to(self.device)
 
-                Hs, Ws = batch["src_orig_size"]
-                Ht, Wt = batch["trg_orig_size"]
+                _, h_src, w_src = batch["src_imsize"]
+                _, h_trg, w_trg = batch["trg_imsize"]
 
-                hv_s, wv_s = int(Hs_pad) // PATCH, int(Ws_pad) // PATCH
-                hv_t, wv_t = int(Ht_pad) // PATCH, int(Wt_pad) // PATCH
+                h_src = int(h_src)
+                w_src = int(w_src)
+                h_trg = int(h_trg)
+                w_trg = int(w_trg)
+
+                h_grid_src = h_src // self.patch_size
+                w_grid_src = w_src // self.patch_size
 
                 distances_this_image: list[float] = []
 
-                for i in range(src_kps.shape[0]):
-                    src_kp = src_kps[i]  # (2,)
-                    trg_kp = trg_kps[i]  # (2,)
+                n_kps = min(src_kps.shape[0], trg_kps.shape[0])
 
-                    # indice patch sorgente usando la tua funzione
+                for i in range(n_kps):
+                    src_kp = src_kps[i]
+                    trg_kp = trg_kps[i]
+
+                    if torch.isnan(src_kp).any() or torch.isnan(trg_kp).any():
+                        continue
+
                     x_idx, y_idx = pixel_to_patch_idx(
                         xy=src_kp,
-                        stride=PATCH,
-                        grid_hw=(hv_s, wv_s),
-                        img_hw=(Hs, Ws),  # ORIGINAL SIZE (non paddata)
+                        stride=self.patch_size,
+                        grid_hw=(h_grid_src, w_grid_src),
+                        img_hw=(h_src, w_src),
                     )
-                    idx = y_idx * wv_s + x_idx
 
-                    src_feat = feats_src[y_idx, x_idx]  # (C,)
+                    src_feat = feats_src[y_idx, x_idx]
                     sim_2d = (feats_trg * src_feat).sum(dim=-1)
 
                     if self.win_soft_argmax:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=self.wsam_win_size,
-                                                                        temperature=self.wsam_beta)
+                        y_pred_patch, x_pred_patch = soft_argmax_window(
+                            sim_2d,
+                            window_radius=self.wsam_win_radius,
+                            temperature=self.wsam_temp,
+                        )
                     else:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=1)
+                        y_pred_patch, x_pred_patch = soft_argmax_window(
+                            sim_2d,
+                            window_radius=0,
+                        )
 
-                    x_pred, y_pred = patch_idx_to_pixel((x_pred_patch, y_pred_patch), stride=PATCH)
+                    x_pred, y_pred = patch_idx_to_pixel(
+                        (x_pred_patch, y_pred_patch),
+                        stride=self.patch_size,
+                    )
 
-                    x_pred = max(0.0, min(x_pred, float(Wt - 1)))
-                    y_pred = max(0.0, min(y_pred, float(Ht - 1)))
+                    x_pred = max(0.0, min(float(x_pred), float(w_trg - 1)))
+                    y_pred = max(0.0, min(float(y_pred), float(h_trg - 1)))
 
-                    # distanza in pixel originali
                     dx = x_pred - float(trg_kp[0])
                     dy = y_pred - float(trg_kp[1])
+
                     dist = math.sqrt(dx * dx + dy * dy)
                     distances_this_image.append(dist)
 
-                    # salva risultato
                 results.append(
                     CorrespondenceResult(
                         category=category,
                         distances=distances_this_image,
                         pck_threshold_0_05=batch["pck_threshold_0_05"],
                         pck_threshold_0_1=batch["pck_threshold_0_1"],
-                        pck_threshold_0_2=batch["pck_threshold_0_2"]
+                        pck_threshold_0_2=batch["pck_threshold_0_2"],
                     )
                 )
 

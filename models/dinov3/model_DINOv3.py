@@ -1,8 +1,5 @@
-from __future__ import annotations
-
 from pathlib import Path
 import torch
-import copy
 
 
 DINOV3_REPO_URL = "https://github.com/facebookresearch/dinov3.git"
