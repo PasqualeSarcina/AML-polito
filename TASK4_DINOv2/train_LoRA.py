@@ -12,7 +12,7 @@ from peft import LoraConfig, get_peft_model
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data.task2_DINOv2_dataset import SPairDataset
 from utils.setup_data import setup_data
-from task2_dinov2.loss import InfoNCELoss
+from TASK2_DINOv2.loss import InfoNCELoss
 
 
 data_root = setup_data() 
@@ -93,7 +93,7 @@ def fine_tuning(epochs, lr, w_decay):
     scaler = torch.amp.GradScaler('cuda')
     num_epochs = epochs
     best_val_loss=float('inf')
-    accumulation_steps = 8  # Simulate batch_size = 8
+    accumulation_steps = 5  # Simulate batch_size = 8
     
     for epoch in range(num_epochs):
         model.train()
@@ -181,11 +181,11 @@ def fine_tuning(epochs, lr, w_decay):
                 best_val_loss=avg_val_loss
                 os.makedirs("checkpoints", exist_ok=True)
                 # Save the weights
-                model.save_pretrained("checkpoints/best_model")
+                model.save_pretrained("checkpoints/best_model_2026")
                 print(f"--> 🏆 New Best Model Saved! (Loss: {best_val_loss:.4f})")
 
 if __name__ == '__main__':
-    fine_tuning(epochs=5, lr=1e-4, w_decay=1e-2)
+    fine_tuning(epochs=3, lr=1e-4, w_decay=1e-2)
    
 
 

@@ -5,11 +5,14 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import sys
+from pathlib import Path
 # NUOVI IMPORT NECESSARI
 from safetensors.torch import load_file
 from peft import LoraConfig, get_peft_model
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 from data.task3_DINOv2_dataset import SPairDataset  
 from utils.setup_data import setup_data
 from task3_dinov2.soft_argmax_windows import soft_argmax_window
@@ -50,8 +53,8 @@ if __name__ == '__main__':
     )
     model = get_peft_model(model, lora_config)
 
-    checkpoint_path = 'C:/Users/nicol/Documents/PoliTo/AdvancedML/project/AML-polito/task4_dinov2/checkpoints/best_model_run1/adapter_model_run1.safetensors'
-    if os.path.exists(checkpoint_path):
+    checkpoint_path = PROJECT_ROOT / 'TASK4_DINOv2' / 'checkpoints' / 'best_model_2026' / 'adapter_model.safetensors'
+    if checkpoint_path.exists():
         print(f"Loading weights from: {checkpoint_path}")
         
         state_dict = load_file(checkpoint_path)
