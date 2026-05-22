@@ -14,15 +14,11 @@ from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from TASK_2_SAM.loss import DenseCrossEntropyLoss
-from TASK_2_SAM.configure_layers import configure_model
-from utils.geometry import extract_features
-from utils.common import download_sam_model, plot_training_results
+from utils.loss import InfoNCELoss
+from utils.configure_layers import configure_model
+from utils.common import download_sam_model
 from data.dataset_SAM import SPairDataset
 
-# ==========================================
-# TRAINING LOOP
-# ==========================================
 def seed_everything(seed=42):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -32,107 +28,82 @@ def seed_everything(seed=42):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False 
-    print(f">>> 🔒 SEED FISSATO A {seed} <<<")
 
-def train_finetune(model, train_loader, val_loader, save_dir, epochs=5, lr=1e-5, accumulation_steps=8):
+def train_finetune(model, train_loader, val_loader, save_dir, epochs, lr, wd, accumulation_steps, temperature):
     scaler = GradScaler()
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
-                            lr=lr)
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, 
-        max_lr=1e-4,
-        steps_per_epoch=len(train_loader),
-        epochs=epochs,
-        pct_start=0.1 
-    )
-    criterion = DenseCrossEntropyLoss(temperature=0.1)
-    model.train() 
-    
-    best_val_loss = float('inf') #TENIAMO TRACCIA DEL MIGLIOR MODELLO
+                            lr=lr, weight_decay=wd)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    criterion = InfoNCELoss(temperature=temperature)
+
+    best_val_loss = float('inf') 
     train_loss_history = []
     val_loss_history = []
 
-    print(f"Inizio Training per {epochs} epoche...")
+    print(f"Inizio Training per {epochs} epoche")
     
     for epoch in range(epochs):
+        model.train() 
         train_loss = 0
-        steps = 0
         optimizer.zero_grad()
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1} [TRAIN]")       
 
         for i, batch in enumerate(pbar):
-            try:
-                src = batch['src_img'].to(device)
-                trg = batch['trg_img'].to(device)
-                kps_src = batch['src_kps'].to(device)
-                kps_trg = batch['trg_kps'].to(device)
-                kps_mask = batch['kps_valid'].to(device)
-                
-                with autocast():
-                    feats_src = extract_features(model, src)
-                    feats_trg = extract_features(model, trg)
-                    loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
-                    loss = loss / accumulation_steps
+            src_img = batch['src_img'].to(device)
+            trg_img = batch['trg_img'].to(device)
+            kps_src = batch['src_kps'].to(device)
+            kps_trg = batch['trg_kps'].to(device)
+            kps_mask = batch['kps_valid'].to(device)
+            
+            with autocast():
+                feats_src = model.image_encoder(src_img) # B, C, Hf, Wf
+                feats_trg = model.image_encoder(trg_img)
+                loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
+                loss = loss / accumulation_steps
 
-                if loss.item() > 0:
-                    scaler.scale(loss).backward()
+            scaler.scale(loss).backward()
 
-                    if (i + 1) % accumulation_steps == 0:
-                        scaler.step(optimizer)
-                        scaler.update()
-                        optimizer.zero_grad()
-                        scheduler.step()
+            if (i + 1) % accumulation_steps == 0 or (i+1) == len(train_loader):
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
 
-                    current_loss = loss.item() * accumulation_steps
-                    train_loss += current_loss
-                    steps += 1
-                    pbar.set_postfix({'loss': train_loss / max(steps, 1)})
-                    
-            except RuntimeError as e:
-                if "out of memory" in str(e):
-                    print(f"\n⚠️ OOM/CUDA Error. Salto batch e svuoto cache.")
-                    torch.cuda.empty_cache()
-                    continue
-                else:
-                    raise e # Se è un altro errore, fermati
+            train_loss += loss.item() * accumulation_steps
+            pbar.set_postfix({'loss': train_loss/max(i, 1)})
         
-        avg_train_loss = train_loss / max(steps, 1)
+        avg_train_loss = train_loss / len(train_loader)
+        scheduler.step()
 
         model.eval()
         val_loss = 0
-        val_steps = 0
         torch.cuda.empty_cache()
 
         with torch.no_grad():
             for batch in tqdm(val_loader, desc=f"Epoch {epoch+1} [VAL]"):                
-                src = batch['src_img'].to(device)
-                trg = batch['trg_img'].to(device)
+                src_img = batch['src_img'].to(device)
+                trg_img = batch['trg_img'].to(device)
                 kps_src = batch['src_kps'].to(device)
                 kps_trg = batch['trg_kps'].to(device)
                 kps_mask = batch['kps_valid'].to(device)
 
                 with autocast():
-                    feats_src = model.image_encoder(src)
-                    feats_trg = model.image_encoder(trg)
+                    feats_src = model.image_encoder(src_img) # B, C, Hf, Wf
+                    feats_trg = model.image_encoder(trg_img)
                     loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
                 
-                if loss.item() > 0:
-                    val_loss += loss.item()
-                    val_steps += 1
+                val_loss += loss.item()
         
-        avg_val_loss = val_loss / max(val_steps, 1)
-
+        avg_val_loss = val_loss / len(val_loader)
         train_loss_history.append(avg_train_loss)
         val_loss_history.append(avg_val_loss)
 
-        # --- STAMPA E SALVATAGGIO ---
-        print(f"\n✅ EPOCA {epoch+1} COMPLETATA:")
-        print(f"   📉 Training Loss:   {avg_train_loss:.4f}")
-        print(f"   📊 Validation Loss: {avg_val_loss:.4f}")
+        print(f"\nEPOCA {epoch+1} COMPLETATA:")
+        print(f"Training Loss:   {avg_train_loss:.4f}")
+        print(f"Validation Loss: {avg_val_loss:.4f}")
         
         # Logica di salvataggio
         # 1. Salva il modello corrente come "latest"
-        latest_name = "sam_latest.pth"
+        latest_name = f"sam_latest_{epoch}_epochs.pth"
         torch.save(model.state_dict(), os.path.join(save_dir, latest_name))
         
         # 2. Salva SE è il migliore finora
@@ -140,16 +111,17 @@ def train_finetune(model, train_loader, val_loader, save_dir, epochs=5, lr=1e-5,
             best_val_loss = avg_val_loss
             best_name = "sam_best.pth"
             torch.save(model.state_dict(), os.path.join(save_dir, best_name))
-            print(f"   🏆 Nuovo record! Salvato: {best_name}")
+            print(f"Salvato: {best_name}")
         
         print("-" * 60)
     return train_loss_history, val_loss_history
+
 
 if __name__ == "__main__":
     seed_everything(42)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-
+    
     dataset_root = 'dataset/SPair-71k'
     checkpoint_dir = 'checkpoints'
     results_dir = 'results'
@@ -157,10 +129,6 @@ if __name__ == "__main__":
     ckpt_path = download_sam_model(checkpoint_dir)
     sam = sam_model_registry["vit_b"](checkpoint=ckpt_path)
     sam.to(device)
-
-    n_layers = 2
-    n_epochs = 4  
-    configure_model(sam, unfreeze_last_n_layers=n_layers)
 
     pair_ann_path = os.path.join(dataset_root, 'PairAnnotation')
     layout_path = os.path.join(dataset_root, 'Layout')
@@ -174,24 +142,30 @@ if __name__ == "__main__":
     val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4)
     print(f"Dataset Validation caricato: {len(val_dataset)} coppie.")
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    run_id = timestamp
+    n_layers = 2
+    n_epochs = 5
+    lr = 1e-5
+    wd = 1e-2
+    accumulation_steps = 8
+    temperature = 0.07  
+    configure_model(sam, unfreeze_last_n_layers=n_layers)
 
-    # AVVIO TRAINING
-    print(f"\n\n{'#'*60}")
-    print(f"🧪 ESPERIMENTO: Fine-tuning ultimi {n_layers} layer")
-    print(f"{'#'*60}")
+    print(f"Fine-tuning ultimi {n_layers} layer")
 
+    run_id = datetime.now().strftime("%Y%m%d_%H%M")
+     
     train_hist, val_hist = train_finetune(
         sam, train_dataloader, val_dataloader, checkpoint_dir,
-        n_epochs, lr=1e-5, accumulation_steps=8)
+        n_epochs, lr, wd, accumulation_steps, temperature)
     
-    # PLOTTAGGIO RISULTATI
-    plot_training_results(train_hist, val_hist, results_dir, n_layers, run_id)
-
+    # salviamo gli iperparametri e i risultati in un .json nella cartella checkpoints
     history_data = {
-        'n_layers': n_layers,
         'run_id': run_id,
+        'n_layers': n_layers,
+        'lr': lr,
+        'wd': wd,
+        'acc_step': accumulation_steps,
+        'temperature': temperature,
         'train_loss': train_hist,
         'val_loss': val_hist,
         'epochs': n_epochs
@@ -199,3 +173,4 @@ if __name__ == "__main__":
     json_filename = f"history_{n_layers}layers_{run_id}.json"
     with open(os.path.join(checkpoint_dir, json_filename), 'w') as f:
         json.dump(history_data, f)
+    
