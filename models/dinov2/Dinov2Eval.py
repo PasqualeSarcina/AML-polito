@@ -21,9 +21,8 @@ class Dinov2Eval:
     def __init__(self, args):
         self.dataset_name = args.dataset
         self.custom_weights = args.custom_weights
-        self.win_soft_argmax = args.win_soft_argmax
-        self.wsam_win_size = args.wsam_win_size
-        self.wsam_beta = args.wsam_beta
+        self.wsam_win_radius = args.wsam_win_radius
+        self.wsam_temp = args.wsam_temp
         self.device = args.device
         self.base_dir = args.base_dir
 
@@ -128,11 +127,12 @@ class Dinov2Eval:
                     )  # (1369,)
                     sim_2d = sim_1d.view(h_grid, w_grid)  # (37,37)
 
-                    if self.win_soft_argmax:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=self.wsam_win_size,
-                                                                        temperature=self.wsam_beta)  # ritorna x,y
-                    else:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=1)
+
+                    y_pred_patch, x_pred_patch = soft_argmax_window(
+                        sim_2d,
+                        window_radius=self.wsam_win_radius,
+                        temperature=self.wsam_temp
+                    )
 
                     # --- 518 -> ORIG target  ---
                     x_pred, y_pred = patch_idx_to_pixel((x_pred_patch, y_pred_patch), stride=patch_size)

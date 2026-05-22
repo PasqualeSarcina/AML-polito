@@ -20,9 +20,8 @@ class SamEval:
     def __init__(self, args):
         self.dataset_name = args.dataset
         self.custom_weights = args.custom_weights
-        self.win_soft_argmax = args.win_soft_argmax
-        self.wsam_win_size = args.wsam_win_size
-        self.wsam_beta = args.wsam_beta
+        self.wsam_win_radius = args.wsam_win_radius
+        self.wsam_temp = args.wsam_temp
         self.device = args.device
         self.base_dir = args.base_dir
         self._init_model()
@@ -150,11 +149,11 @@ class SamEval:
                     sim_2d = sim.view(hv_t, wv_t)  # [hv_t, wv_t]
 
                     # soft-argmax o argmax classico
-                    if self.win_soft_argmax:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=self.wsam_win_size,
-                                                                        temperature=self.wsam_beta)
-                    else:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(sim_2d, window_radius=1)
+                    y_pred_patch, x_pred_patch = soft_argmax_window(
+                        sim_2d,
+                        window_radius=self.wsam_win_radius,
+                        temperature=self.wsam_temp
+                    )
 
                     # ---- token -> pixel nello spazio resized ----
                     x_pred, y_pred = patch_idx_to_pixel((x_pred_patch, y_pred_patch), stride=PATCH)

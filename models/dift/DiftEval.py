@@ -23,9 +23,8 @@ from utils.utils_results import CorrespondenceResult
 class DiftEval:
     def __init__(self, args):
         self.dataset_name = args.dataset
-        self.win_soft_argmax = args.win_soft_argmax
-        self.wsam_win_size = args.wsam_win_size
-        self.wsam_beta = args.wsam_beta
+        self.wsam_win_radius = args.wsam_win_radius
+        self.wsam_temp = args.wsam_temp
         self.device = args.device
         self.base_dir = args.base_dir
         self.enseble_size = args.ensemble_size
@@ -119,15 +118,12 @@ class DiftEval:
                     sim2d = torch.nn.functional.cosine_similarity(trg_ft[0], src_vec, dim=0)  # [48,48]
 
                     # ---- pred token coords (y,x) ----
-                    if self.win_soft_argmax:
-                        # la tua soft_argmax_window ritorna (y,x)
-                        y_tok, x_tok = soft_argmax_window(
-                            sim2d,
-                            window_radius=self.wsam_win_size,
-                            temperature=self.wsam_beta
-                        )
-                    else:
-                        y_tok, x_tok = soft_argmax_window(sim2d, window_radius=1)
+
+                    y_tok, x_tok = soft_argmax_window(
+                        sim2d,
+                        window_radius=self.wsam_win_radius,
+                        temperature=self.wsam_temp
+                    )
 
                     # ---- token -> pixel nello spazio 768 (centro patch) ----
                     x_pred, y_pred = patch_idx_to_pixel((x_tok, y_tok), stride=PATCH)

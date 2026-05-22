@@ -85,7 +85,7 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
     scaler = torch.amp.GradScaler('cuda')
     num_epochs = epochs
     best_val_loss=float('inf')
-    accumulation_steps = 8  # Simulate batch_size = 8
+    accumulation_steps = 8  
 
     for epoch in range(num_epochs):
         model.train()
@@ -95,7 +95,7 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
 
         for i, batch in enumerate(pbar):
             
-            # 2. Training Logic (INDENTED INSIDE THE LOOP)
+            # 2. Validation
             src_img = batch['src_img'].to(device)
             trg_img = batch['trg_img'].to(device)
             src_kps = batch['src_kps'].to(device)
@@ -130,7 +130,6 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
         print(f"Epoch [{epoch+1}/{num_epochs}] Avg Training Loss: {avg_train_loss:.4f}")
         scheduler.step()
         
-        # Optional: Print current LR to verify
         current_lr = scheduler.get_last_lr()[0]
         print(f"--> Learning Rate for next epoch: {current_lr:.8f}")
         
@@ -140,7 +139,6 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
         with torch.no_grad():
             for i, batch in enumerate(pbar):
             
-                # 2. Training Logic (INDENTED INSIDE THE LOOP)
                 src_img = batch['src_img'].to(device)
                 trg_img = batch['trg_img'].to(device)
                 src_kps = batch['src_kps'].to(device)
@@ -172,7 +170,7 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
                 os.makedirs("checkpoints", exist_ok=True)
                 # Save the weights
                 torch.save(model.state_dict(), "checkpoints/best_model.pth")
-                print(f"--> 🏆 New Best Model Saved! (Loss: {best_val_loss:.4f})")
+                print(f"--> New Best Model Saved (Loss: {best_val_loss:.4f})")
 
 if __name__ == '__main__':
     fine_tuning(epochs=5, lr=1e-5, w_decay=1e-2, n_layers=1)

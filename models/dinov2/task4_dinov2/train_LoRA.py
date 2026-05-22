@@ -75,13 +75,12 @@ def fine_tuning(epochs, lr, w_decay):
         bias="none"
     )
 
-    # 3. Applica LoRA al modello
+    # Applica LoRA al modello
     model = get_peft_model(model, lora_config)
 
-    # 4. Sposta su GPU
     model = model.to(device)
 
-    # 5. Stampa di controllo
+    # Stampa di controllo
     model.print_trainable_parameters()
     
     criterion = InfoNCELoss(temperature=0.07).to(device)
@@ -104,7 +103,7 @@ def fine_tuning(epochs, lr, w_decay):
 
         for i, batch in enumerate(pbar):
             
-            # 2. Training Logic 
+            # Training
             src_img = batch['src_img'].to(device)
             trg_img = batch['trg_img'].to(device)
             src_kps = batch['src_kps'].to(device)
@@ -140,7 +139,6 @@ def fine_tuning(epochs, lr, w_decay):
         print(f"Epoch [{epoch+1}/{num_epochs}] Avg Training Loss: {avg_train_loss:.4f}")
         scheduler.step()
         
-        # Optional: Print current LR to verify
         current_lr = scheduler.get_last_lr()[0]
         print(f"--> Learning Rate for next epoch: {current_lr:.8f}")
         
@@ -150,7 +148,7 @@ def fine_tuning(epochs, lr, w_decay):
         with torch.no_grad():
             for i, batch in enumerate(pbar):
             
-                # 2. Training Logic (INDENTED INSIDE THE LOOP)
+                # 2. Validation)
                 src_img = batch['src_img'].to(device)
                 trg_img = batch['trg_img'].to(device)
                 src_kps = batch['src_kps'].to(device)
@@ -182,7 +180,7 @@ def fine_tuning(epochs, lr, w_decay):
                 os.makedirs("checkpoints", exist_ok=True)
                 # Save the weights
                 model.save_pretrained("checkpoints/best_model")
-                print(f"--> 🏆 New Best Model Saved! (Loss: {best_val_loss:.4f})")
+                print(f"--> New Best Model Saved! (Loss: {best_val_loss:.4f})")
 
 if __name__ == '__main__':
     fine_tuning(epochs=5, lr=1e-4, w_decay=1e-2)

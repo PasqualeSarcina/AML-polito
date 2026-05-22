@@ -47,23 +47,13 @@ if __name__ == '__main__':
     print(f"\n--- 3. Loading DINOv2 on {device} ---")
     
     print(f"\n--- 3. Loading Custom DINOv2 from 'best_model.pth' ---")
-
-    # 1. Initialize the Standard Architecture
-    # We still need to load the skeleton of the model first
     model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
-
-    # 2. Define the path to your checkpoint
     checkpoint_path = 'C:/Users/nicol/Documents/PoliTo/AdvancedML/project/AML-polito/task2_dinov2/checkpoints/best_model_run3_scheduler_last_layer.pth' 
 
     if os.path.exists(checkpoint_path):
         print(f"Loading weights from: {checkpoint_path}")
-        
-        # 3. Load the State Dictionary
-        # map_location ensures we load correctly even if trained on a different GPU
         checkpoint = torch.load(checkpoint_path, map_location=device)
 
-        # CHECK: Sometimes checkpoints are saved as a dictionary containing metadata
-        # If your pth file is like {'model': weights, 'epoch': 10}, we extract just the weights
         if 'model' in checkpoint:
             state_dict = checkpoint['model']
         elif 'state_dict' in checkpoint:
@@ -71,23 +61,18 @@ if __name__ == '__main__':
         else:
             state_dict = checkpoint # Assume it's just the weights directly
 
-        # 4. Clean up Key Names (Optional but common safety)
-        # If you trained with DataParallel, keys might start with "module."
-        # We remove this prefix so they match the standard model.
         new_state_dict = {}
         for k, v in state_dict.items():
             name = k.replace("module.", "") 
             new_state_dict[name] = v
         
-        # 5. Load Weights into Model
-        # strict=False allows loading even if some minor keys (like head) don't match exactly
+        # Load Weights into Model
         msg = model.load_state_dict(new_state_dict, strict=False)
         print(f"Weights loaded. Status: {msg}")
         
     else:
         print(f"WARNING: Checkpoint '{checkpoint_path}' not found! Using default weights.")
 
-    # 6. Move to Device and Set to Eval
     model.to(device)
     model.eval()
 
@@ -95,7 +80,6 @@ if __name__ == '__main__':
 
     print(f"Model loaded on: {device}")
 
-    # Initialize counters
     class_pck_data = {}
     class_pck_image = {}
 
@@ -114,11 +98,11 @@ if __name__ == '__main__':
             if category not in class_pck_image:
                 class_pck_image[category] = {
                     'total_image': 0,
-                    'image_value_sum_0_05': 0, # Accumulatore per le medie delle singole immagini
+                    'image_value_sum_0_05': 0, 
                     'image_value_sum_0_1': 0,
                     'image_value_sum_0_2': 0
                 }
-                # Counters specific for THIS image
+                
             img_tot_keypoints = 0
             img_correct_keypoints_0_05 = 0
             img_correct_keypoints_0_1 = 0
@@ -127,14 +111,12 @@ if __name__ == '__main__':
             src_img = data['src_img'].to(device) # torch.Size([1, 3, 518, 518])
             trg_img = data['trg_img'].to(device)
             
-            # We pass the PADDED images
             dict_src = model.forward_features(src_img) # Python dictionary. 
             dict_trg = model.forward_features(trg_img)
             
             feats_src = dict_src["x_norm_patchtokens"] # [Batch_Size, Num_Patches, Dimension]
             feats_trg = dict_trg["x_norm_patchtokens"]  
-            
-            # We keep ORIGINAL dimensions for valid boundary checks
+           
             _, _, H_orig, W_orig = data['src_img'].shape
 
             patch_size = 14
@@ -147,7 +129,6 @@ if __name__ == '__main__':
         
             bbox = data['trg_bbox'][0] 
 
-            # Estraiamo i 4 valori scalari per l'immagine corrente (indice batch 0)
             x_min = bbox[0].item()
             y_min = bbox[1].item()
             x_max = bbox[2].item()
@@ -155,15 +136,12 @@ if __name__ == '__main__':
 
             w_bbox = x_max - x_min
             h_bbox = y_max - y_min
-            # La dimensione di riferimento è il lato massimo della BBox
             max_side = max(w_bbox, h_bbox)
             
-            # Calcoliamo le 3 soglie in pixel
             thr_05 = max_side * 0.05
             thr_10 = max_side * 0.10
             thr_20 = max_side * 0.20
-            # Get threshold value
-            #         
+                   
             for n_keypoint, keypoint_src in enumerate(kps_list_src):
 
                 if valid_mask[n_keypoint] == 0:
@@ -179,7 +157,7 @@ if __name__ == '__main__':
                 x_patch_src = min(max(0, x_pixel_src // patch_size), w_grid - 1)
                 y_patch_src = min(max(0, y_pixel_src // patch_size), h_grid - 1)
 
-                # 3. INDEX CALCULATION
+                # INDEX CALCULATION
                 patch_index_src = (y_patch_src * w_grid) + x_patch_src
 
                 # Extract Vector
@@ -219,8 +197,7 @@ if __name__ == '__main__':
                 if is_correct_05: img_correct_keypoints_0_05 += 1
                 if is_correct_10: img_correct_keypoints_0_1 += 1
                 if is_correct_20: img_correct_keypoints_0_2 += 1
-            
-            # AGGIORNAMENTO DATI CATEGORIA (PCK PER IMAGE)
+          
             if img_tot_keypoints > 0:
                 image_accuracy_0_05 = img_correct_keypoints_0_05 / img_tot_keypoints
                 image_accuracy_0_1 = img_correct_keypoints_0_1 / img_tot_keypoints

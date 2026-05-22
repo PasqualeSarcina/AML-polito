@@ -12,7 +12,7 @@ def soft_argmax_window(sim_map_2d, window_radius=3, temperature=20):
     """
     H, W = sim_map_2d.shape
     
-    # 1. Find the Hard Peak (Integer)
+    # 1. Find the Hard Peak 
     flattened = sim_map_2d.view(-1)
     idx = torch.argmax(flattened)
     y_hard = idx // W

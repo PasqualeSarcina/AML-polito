@@ -69,29 +69,26 @@ with torch.no_grad(): # Disable gradients
         if category not in class_pck_image:
             class_pck_image[category] = {
                 'total_image': 0,
-                'image_value_sum_0_05': 0, # Accumulatore per le medie delle singole immagini
+                'image_value_sum_0_05': 0, 
                 'image_value_sum_0_1': 0,
                 'image_value_sum_0_2': 0
             }
-            # Counters specific for THIS image
+           
         img_tot_keypoints = 0
         img_correct_keypoints_0_05 = 0
         img_correct_keypoints_0_1 = 0
         img_correct_keypoints_0_2 = 0
 
-        src_img = data['src_img'].to(device) # torch.Size([1, 3, 333, 500])
+        src_img = data['src_img'].to(device) # torch.Size([1, 3, 518, 518])
        
         trg_img = data['trg_img'].to(device)
 
-              
-        # We pass the PADDED images
         dict_src = model.forward_features(src_img) # Python dictionary. 
         dict_trg = model.forward_features(trg_img)
         
         feats_src = dict_src["x_norm_patchtokens"] # [Batch_Size, Num_Patches, Dimension]
         feats_trg = dict_trg["x_norm_patchtokens"]
          
-        # We keep ORIGINAL dimensions for valid boundary checks
         _, _, H_orig, W_orig = data['src_img'].shape
 
         patch_size = 14
@@ -104,7 +101,6 @@ with torch.no_grad(): # Disable gradients
     
         bbox = data['trg_bbox'][0] 
 
-        # Estraiamo i 4 valori scalari per l'immagine corrente (indice batch 0)
         x_min = bbox[0].item()
         y_min = bbox[1].item()
         x_max = bbox[2].item()
@@ -112,15 +108,13 @@ with torch.no_grad(): # Disable gradients
 
         w_bbox = x_max - x_min
         h_bbox = y_max - y_min
-        # La dimensione di riferimento è il lato massimo della BBox
         max_side = max(w_bbox, h_bbox)
         
-        # Calcoliamo le 3 soglie in pixel
         thr_05 = max_side * 0.05
         thr_10 = max_side * 0.10
         thr_20 = max_side * 0.20
-        # Get threshold value
-        #         
+       
+                 
         for n_keypoint, keypoint_src in enumerate(kps_list_src):
 
             if valid_mask[n_keypoint] == 0:
@@ -177,7 +171,6 @@ with torch.no_grad(): # Disable gradients
             if is_correct_10: img_correct_keypoints_0_1 += 1
             if is_correct_20: img_correct_keypoints_0_2 += 1
         
-        # AGGIORNAMENTO DATI CATEGORIA (PCK PER IMAGE)
         if img_tot_keypoints > 0:
             image_accuracy_0_05 = img_correct_keypoints_0_05 / img_tot_keypoints
             image_accuracy_0_1 = img_correct_keypoints_0_1 / img_tot_keypoints
