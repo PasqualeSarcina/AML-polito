@@ -15,17 +15,19 @@ class SPairDataset(CorrespondenceDataset):
         if not os.path.exists(self.spair_dir):
             download_spair(self.dataset_dir)
 
+        self.spair_split = "trn" if self.datatype == "train" else self.datatype
 
         self.ann_files = open(
-            os.path.join(self.spair_dir, 'Layout', dataset_size, self.datatype + '.txt'),
+            os.path.join(self.spair_dir, 'Layout', dataset_size, self.spair_split + '.txt'),
             "r").read().split('\n')
+        
         self.ann_files = self.ann_files[:len(self.ann_files) - 1]
 
     def _load_annotation(self, idx):
         r""" Loads the annotation of the pair with index idx """
         ann_filename = self.ann_files[idx]
         ann_file = ann_filename + '.json'
-        json_path = os.path.join(self.spair_dir, 'PairAnnotation', self.datatype, ann_file)
+        json_path = os.path.join(self.spair_dir, 'PairAnnotation', self.spair_split, ann_file)
 
         with open(json_path) as f:
             annotation = json.load(f)

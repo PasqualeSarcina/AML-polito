@@ -25,6 +25,14 @@ class Dinov3Eval:
         feature grid = 32x32
         keypoints and bounding boxes are resized by PreProcess
         PCK thresholds are computed on the resized target bounding box
+
+    Soft-argmax behavior:
+        wsam_win_radius = 0  -> hard argmax
+        wsam_win_radius > 0  -> window soft-argmax
+
+    Note:
+        soft_argmax_window uses temperature, not beta.
+        beta = 50 corresponds to temperature = 1 / 50 = 0.02.
     """
 
     def __init__(self, args):
@@ -34,21 +42,27 @@ class Dinov3Eval:
         self.dataset_name = args.dataset
         self.custom_weights = args.custom_weights
 
-        self.wsam_win_radius = int(getattr(args, "wsam_win_radius", 0))
-        self.wsam_temp = float(getattr(args, "wsam_temp", 0.05))
-
-        self.win_soft_argmax = self.wsam_win_radius > 0
-
-        print(
-            f"[DINOv3 Eval] win_soft_argmax={self.win_soft_argmax} | "
-            f"radius={self.wsam_win_radius} | temp={self.wsam_temp}"
-        )
-
         self.device = args.device
         self.base_dir = args.base_dir
 
         self.patch_size = 16
         self.input_size = 512
+
+        # eval.py is not modified:
+        # wsam_win_radius decides whether to use hard argmax or window soft-argmax.
+        self.wsam_win_radius = int(getattr(args, "wsam_win_radius", 0))
+        self.wsam_temp = float(getattr(args, "wsam_temp", 0.05))
+        self.win_soft_argmax = self.wsam_win_radius > 0
+
+        if self.wsam_win_radius < 0:
+            raise ValueError(
+                f"wsam_win_radius must be >= 0, got {self.wsam_win_radius}."
+            )
+
+        if self.wsam_temp <= 0:
+            raise ValueError(
+                f"wsam_temp must be > 0, got {self.wsam_temp}."
+            )
 
         self._init_model()
 
@@ -75,6 +89,13 @@ class Dinov3Eval:
         )
 
         self.processed_img = defaultdict(set)
+
+        print(
+            "[DINOv3 Eval] "
+            f"window_soft_argmax={self.win_soft_argmax} | "
+            f"wsam_win_radius={self.wsam_win_radius} | "
+            f"wsam_temp={self.wsam_temp}"
+        )
 
     def _init_model(self):
         """
@@ -162,7 +183,6 @@ class Dinov3Eval:
         """
         Convert DINOv3 patch tokens [1, N, C] into a normalized feature map [H, W, C].
         """
-
         if tokens_bnc.shape[0] != 1:
             raise RuntimeError(
                 f"DINOv3 evaluation expects batch size 1, got {tokens_bnc.shape[0]}"
@@ -178,7 +198,10 @@ class Dinov3Eval:
                 f"(h_grid={h_grid}, w_grid={w_grid})"
             )
 
+        # x_norm_patchtokens should already contain patch tokens.
+        # Keeping the last n_patches makes the conversion robust to possible extra tokens.
         patch_tok = tok[-n_patches:]
+
         featmap = patch_tok.view(h_grid, w_grid, -1)
 
         return F.normalize(featmap, dim=-1)
@@ -187,63 +210,41 @@ class Dinov3Eval:
         """
         Build a category-aware cache filename to avoid feature collisions.
         """
-
         safe_category = str(category).replace("/", "_")
         safe_img_name = str(img_name).replace("/", "_").replace("\\", "_")
 
         return f"{safe_category}__{safe_img_name}"
 
     def compute_features(
-    self,
-    img_tensor: torch.Tensor,
-    img_name: str,
-    category: str,
+        self,
+        img_tensor: torch.Tensor,
+        img_name: str,
+        category: str,
     ) -> torch.Tensor:
         """
-        Load cached features if available; otherwise extract and save normalized
-        DINOv3 feature maps.
-
-        Cache path:
-            data/features/dinov3/<run_name>/<category>__<image_name>.pt
+        Load cached features or extract and cache normalized DINOv3 feature maps.
         """
-
         if self.dataset_name == "ap-10k":
             category = "all"
 
         cache_name = self._cache_name(img_name, category)
         cache_path = self.feat_dir / f"{cache_name}.pt"
 
-        # ------------------------------------------------------------------
-        # 1) Try to load cached feature map
-        # ------------------------------------------------------------------
-        if cache_path.exists():
-            try:
-                self.processed_img[category].add(cache_name)
-                return load_featuremap(
-                    cache_name,
-                    self.feat_dir,
-                    device=self.device,
-                )
-            except Exception as e:
-                print(
-                    f"[DINOv3 Eval] Warning: could not load cached feature "
-                    f"{cache_path}. Recomputing it. Error: {e}"
-                )
-                try:
-                    cache_path.unlink()
-                except Exception:
-                    pass
+        if cache_name in self.processed_img[category] or cache_path.exists():
+            self.processed_img[category].add(cache_name)
+            return load_featuremap(
+                cache_name,
+                self.feat_dir,
+                device=self.device,
+            )
 
-        # ------------------------------------------------------------------
-        # 2) Compute feature map
-        # ------------------------------------------------------------------
         x = img_tensor.to(self.device)
 
         if x.ndim == 3:
             x = x.unsqueeze(0)
         elif x.ndim != 4:
             raise RuntimeError(
-                f"Unexpected img_tensor shape {x.shape}, expected CHW or BCHW"
+                f"Unexpected img_tensor shape {x.shape}, expected CHW or BCHW."
             )
 
         _, _, h_img, w_img = x.shape
@@ -268,22 +269,13 @@ class Dinov3Eval:
         tokens = self._safe_tokens(dict_out["x_norm_patchtokens"])
         featmap = self._tokens_to_featuremap(tokens, h_grid, w_grid)
 
-        # ------------------------------------------------------------------
-        # 3) Save feature map to cache
-        # ------------------------------------------------------------------
         self.processed_img[category].add(cache_name)
 
-        try:
-            save_featuremap(
-                featmap,
-                cache_name,
-                self.feat_dir,
-            )
-        except Exception as e:
-            print(
-                f"[DINOv3 Eval] Warning: could not save cached feature "
-                f"{cache_path}. Evaluation will continue. Error: {e}"
-            )
+        save_featuremap(
+            featmap,
+            cache_name,
+            self.feat_dir,
+        )
 
         return featmap
 
@@ -352,19 +344,15 @@ class Dinov3Eval:
                     )
 
                     src_feat = feats_src[y_idx, x_idx]
+
+                    # Cosine similarity because feature maps are L2-normalized.
                     sim_2d = (feats_trg * src_feat).sum(dim=-1)
 
-                    if self.win_soft_argmax:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(
-                            sim_2d,
-                            window_radius=self.wsam_win_radius,
-                            temperature=self.wsam_temp,
-                        )
-                    else:
-                        y_pred_patch, x_pred_patch = soft_argmax_window(
-                            sim_2d,
-                            window_radius=0,
-                        )
+                    y_pred_patch, x_pred_patch = soft_argmax_window(
+                        sim_2d,
+                        window_radius=self.wsam_win_radius,
+                        temperature=self.wsam_temp,
+                    )
 
                     x_pred, y_pred = patch_idx_to_pixel(
                         (x_pred_patch, y_pred_patch),
