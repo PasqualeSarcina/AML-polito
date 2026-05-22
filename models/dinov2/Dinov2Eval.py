@@ -79,14 +79,14 @@ class Dinov2Eval:
                               smoothing=0.1, mininterval=0.7, maxinterval=2.0):
                 category = batch["category"]
 
-                # featuremaps salvate su immagini resized 518x518
+                # Compute or load featuremaps
                 feats_src = self.compute_features(batch["src_img"], batch["src_imname"], category)  # Resized image
                 feats_trg = self.compute_features(batch["trg_img"], batch["trg_imname"], category)  # Resized image
 
                 feats_src = feats_src.to(self.device)
                 feats_trg = feats_trg.to(self.device)
 
-                # se includono CLS token (1 + 1369), rimuovilo
+                # Remove CLS token if present (1 + 1369)
                 if feats_src.ndim == 3 and feats_src.shape[1] == 1 + h_grid * w_grid:
                     feats_src = feats_src[:, 1:, :]
                 if feats_trg.ndim == 3 and feats_trg.shape[1] == 1 + h_grid * w_grid:
@@ -104,11 +104,11 @@ class Dinov2Eval:
                     kp_src = src_kps[i]
                     kp_trg = trg_kps[i]
 
-                    # skip keypoints "invalidi" tipici (es. -1, -1) o NaN
+                    # Skip invalid keypoints
                     if torch.isnan(kp_src).any() or torch.isnan(kp_trg).any():
                         continue
 
-                    # --- SRC kp (in 518) -> patch index ---
+                    # Get the patch index for the source keypoint (keypoints in the resized space)
                     x_patch, y_patch = pixel_to_patch_idx(
                         kp_src,
                         stride=patch_size,
@@ -116,17 +116,18 @@ class Dinov2Eval:
                         img_hw=(out_h, out_w),
                     )
 
+                    # Compute the linear index of the patch in the source feature map
                     patch_index_src = y_patch * w_grid + x_patch
 
-                    # --- source vector ---
-                    source_vec = feats_src[0, patch_index_src, :]  # (D,)
+                    # Extract the feature vector for the patch_index_src patch
+                    source_vec = feats_src[0, patch_index_src, :]
 
-                    # --- similarity su tutti i patch target ---
+                    # Compute cosine similarity between the source vector and all target patch vectors
+                    # and reshape to the same shape of the DinoV2 featuremap
                     sim_1d = torch.nn.functional.cosine_similarity(
                         feats_trg[0], source_vec.unsqueeze(0), dim=-1
-                    )  # (1369,)
-                    sim_2d = sim_1d.view(h_grid, w_grid)  # (37,37)
-
+                    )
+                    sim_2d = sim_1d.view(h_grid, w_grid)
 
                     y_pred_patch, x_pred_patch = soft_argmax_window(
                         sim_2d,
@@ -134,7 +135,7 @@ class Dinov2Eval:
                         temperature=self.wsam_temp
                     )
 
-                    # --- 518 -> ORIG target  ---
+                    # Remap the predicted patch to the pixel space of the resized image
                     x_pred, y_pred = patch_idx_to_pixel((x_pred_patch, y_pred_patch), stride=patch_size)
 
                     gt_x = float(kp_trg[0].item())
@@ -142,6 +143,8 @@ class Dinov2Eval:
 
                     dx = x_pred - gt_x
                     dy = y_pred - gt_y
+
+                    # Compute the distance in pixels between the prediction and the ground truth
                     dist = math.sqrt(dx * dx + dy * dy)
                     distances_this_image.append(dist)
 

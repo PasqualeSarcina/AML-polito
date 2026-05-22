@@ -169,10 +169,12 @@ class AP10KDataset(CorrespondenceDataset):
 
     @staticmethod
     def _match_keypoints(rec_a, rec_b):
+        """Match keypoints between two annotated records by keypoint name."""
         a_map = {kp["name"]: (kp["x"], kp["y"]) for kp in rec_a["keypoints"]}
         b_map = {kp["name"]: (kp["x"], kp["y"]) for kp in rec_b["keypoints"]}
+        # Keep only the common keypoints name (key)
         common = a_map.keys() & b_map.keys()
-        src_kps = [a_map[n] for n in common]  # lista di tuple (x, y)
+        src_kps = [a_map[n] for n in common]
         trg_kps = [b_map[n] for n in common]
         return src_kps, trg_kps
 
@@ -185,26 +187,44 @@ class AP10KDataset(CorrespondenceDataset):
             max_categories=7,
             seed=42
     ):
+        """
+        Generate and write correspondence pairs of images from the same animal species.
+        Pairs are valid only if they share at least `min_kps` matching keypoints (by name).
+
+        Args:
+            f: An open file object where pairs will be written as JSON lines.
+            all_annotated_images: A dictionary mapping image_id to annotation records.
+            min_kps: Minimum number of matching keypoints required for a pair
+                to be valid. Defaults to 3. Pairs with fewer common keypoints are discarded.
+            n_multiplier: Multiplier for the target number of pairs per species.
+                Defaults to 7.
+            max_categories: Maximum number of species (categories) to include.
+                If there are more species than this value, a random subset is selected.
+                Defaults to 7.
+            seed: Random seed for reproducibility of species selection and pair sampling. Defaults to 42.
+        """
         by_species = {}
+
+        # Insert in the dictionary all the images grouped by category
         for rec in all_annotated_images.values():
             by_species.setdefault(rec["category"], []).append(rec)
 
+        # Set a seed for reproducibility
         rng = random.Random(seed)
-        total_written = 0
 
+        # Sort the dictionary in a reproducible way
+        total_written = 0
         species = list(by_species.keys())
         rng.shuffle(species)
-
+        # Keep only the selected categories
         keep = set(species[:max_categories])
         by_species = {k: v for k, v in by_species.items() if k in keep}
 
         for species in sorted(by_species.keys()):
             recs = by_species[species]
 
-            if n_multiplier is not None:
-                target_n = n_multiplier * len(recs)
-            else:
-                target_n = math.comb(len(recs), 2)
+            # Cap for number of generated pairs, based on n_multiplier and the number of images for the current species
+            target_n = n_multiplier * len(recs)
 
             possible_pairs = []
             for a, b in itertools.combinations(recs, 2):
@@ -221,10 +241,12 @@ class AP10KDataset(CorrespondenceDataset):
                     "trg_bndbox": b["bbox"],
                 })
 
+            # Prevents taking more pairs than available
             target_n = min(target_n, len(possible_pairs))
             if target_n <= 0:
                 continue
 
+            # Sample target_n pairs from all the combination
             sampled = rng.sample(possible_pairs, target_n)
 
             for pair in sampled:
@@ -243,6 +265,24 @@ class AP10KDataset(CorrespondenceDataset):
             seed=42,
             max_families=8
     ):
+        """
+        Generate and write correspondence pairs of images from different species within the same family.
+        Pairs are valid only if they share at least `min_kps` matching keypoints (by name).
+
+        Args:
+            f: An open file object where pairs will be written as JSON lines.
+            all_annotated_images: A dictionary mapping image_id to annotation records.
+        min_kps: Minimum number of matching keypoints required for a pair to be valid.
+            Defaults to 3. Pairs with fewer common keypoints are discarded.
+        n_pairs_per_family: Maximum cap on the number of pairs to generate per family.
+            Defaults to 506. Uses reservoir sampling to ensure uniform random selection if more
+            candidates exist than this limit.
+        seed: Random seed for reproducibility of family selection and pair sampling.
+            Defaults to 42.
+        max_families: Maximum number of families (supercategories) to include.
+            If there are more families with at least 2 species each, a random subset is selected.
+            Defaults to 8.
+        """
         rng = random.Random(seed)
         total_written = 0
 
@@ -251,18 +291,17 @@ class AP10KDataset(CorrespondenceDataset):
         for rec in all_annotated_images.values():
             fam = rec["supercategory"]
             spec = rec["category"]
+            # Create a dictionary with supercategory (family) as key, and value another dictionary with
+            # category (species) as key and list of records as value
             fam_spec.setdefault(fam, {}).setdefault(spec, []).append(rec)
 
-        # -----------------------------
-        # SELEZIONE FAMIGLIE (STRICT)
-        # -----------------------------
         if max_families is None or max_families <= 0:
-            raise ValueError("[CROSS-SPECIES] max_families deve essere un intero > 0")
+            raise ValueError("[CROSS-SPECIES] max_families should be an integer > 0")
 
         if n_pairs_per_family is None or n_pairs_per_family <= 0:
-            raise ValueError("[CROSS-SPECIES] n_pairs_per_family deve essere un intero > 0")
+            raise ValueError("[CROSS-SPECIES] n_pairs_per_family should be an integer > 0")
 
-        # cross-species richiede almeno 2 specie per famiglia
+        # cross-species requires at leats 2 species per family
         eligible_fams = [
             fam for fam, spec_map in fam_spec.items()
             if len(spec_map) >= 2
@@ -270,29 +309,27 @@ class AP10KDataset(CorrespondenceDataset):
 
         if len(eligible_fams) < max_families:
             raise ValueError(
-                f"[CROSS-SPECIES] Impossibile selezionare {max_families} famiglie con almeno 2 specie. "
-                f"Disponibili: {len(eligible_fams)}."
+                f"[CROSS-SPECIES] Failed to select {max_families} families with at least 2 species. "
+                f"Available: {len(eligible_fams)}."
             )
 
+        # Sample max_families out of all the eligible (min 2 species) families and re-create the dict
         selected_fams = rng.sample(eligible_fams, k=max_families)
         fam_spec = {fam: fam_spec[fam] for fam in selected_fams}
 
-        # -----------------------------
-        # GENERAZIONE PAIRS con CAP PER FAMIGLIA (reservoir sampling)
-        # -----------------------------
         for fam in sorted(fam_spec.keys()):
             spec_map = fam_spec[fam]
             specs = sorted(spec_map.keys())
 
-            reservoir = []  # conterrà al massimo n_pairs_per_family elementi
-            seen = 0  # numero di candidati validi visti nella famiglia
+            reservoir = []
+            seen = 0  # Valid couples per family
 
-            # tutte le combinazioni di specie nella famiglia
+            # Get all species combinations for this family
             for cat_a, cat_b in itertools.combinations(specs, 2):
                 A = spec_map[cat_a]
                 B = spec_map[cat_b]
 
-                # direzione fissa: src da cat_a, trg da cat_b
+                # Generate all possible pairs between the 2 selected species of this iteration
                 for a, b in itertools.product(A, B):
                     src_kps, trg_kps = AP10KDataset._match_keypoints(a, b)
                     if len(src_kps) < min_kps:
@@ -308,16 +345,17 @@ class AP10KDataset(CorrespondenceDataset):
                         "trg_bndbox": b["bbox"],
                     }
 
-                    # ---- reservoir sampling: campione uniforme tra tutti i candidati validi
+                    # Reservoir sampling to prevent OOM error
                     seen += 1
+                    # If reservoir is not full, append
                     if len(reservoir) < n_pairs_per_family:
                         reservoir.append(pair_out)
                     else:
+                        # Replace a random pair
                         j = rng.randrange(seen)  # 0..seen-1
                         if j < n_pairs_per_family:
                             reservoir[j] = pair_out
 
-            # scrivi al massimo n_pairs_per_family coppie per questa famiglia
             for pair in reservoir:
                 f.write(json.dumps(pair, ensure_ascii=False) + "\n")
 
@@ -334,29 +372,43 @@ class AP10KDataset(CorrespondenceDataset):
             seed=42,
             max_families=5
     ):
+        """
+        Generate and write correspondence pairs between images belonging to different animal families (supercategories).
+        Pairs are valid only if they share at least `min_kps` matching keypoints (by name).
+        Args:
+            f: An open file object where pairs will be written as JSON lines.
+                all_annotated_images: A dictionary mapping image_id to annotation records.
+            min_kps: Minimum number of matching keypoints required for a pair to be valid.
+                Defaults to 3. Pairs with fewer common keypoints are discarded.
+            n_pairs_per_combination: Maximum number of pairs to sample for each
+                selected family-to-family combination. Defaults to 400.
+            seed: Random seed for reproducibility of family selection and pair sampling.
+                Defaults to 42.
+            max_families: Maximum number of families (supercategories) to include.
+                If there are more families with at least 2 species each, a random subset is selected.
+                Defaults to 5.
+        """
         rng = random.Random(seed)
         total_written = 0
 
-        # famiglia -> list[rec]
         by_family = {}
         for rec in all_annotated_images.values():
+            # Populate the dict with supercategory (family) as key and list of records as value
             by_family.setdefault(rec["supercategory"], []).append(rec)
 
-        # ORDINE: supercategory
+        # Shuffle the dict in a reproducible way and keep only the first max_families
         families = sorted(by_family.keys())
         rng.shuffle(families)
         families = families[:max_families]
         by_family = {fam: by_family[fam] for fam in families}
 
-        # coppie di famiglie ordinate (fam1 < fam2)
         for fam1, fam2 in itertools.combinations(families, 2):
             A = by_family[fam1]
             B = by_family[fam2]
 
-            # notebook: genera TUTTE le coppie tra famiglie (materializza)
+            # Generate all possible species pairs between the 2 selected families of this iteration
             cross_family_pairs = list(itertools.product(A, B))
 
-            # filtro richiesto: match_keypoints + min_kps
             possible_pairs = []
             for a, b in cross_family_pairs:
                 src_kps, trg_kps = AP10KDataset._match_keypoints(a, b)
@@ -364,11 +416,10 @@ class AP10KDataset(CorrespondenceDataset):
                     continue
                 possible_pairs.append((a, b, src_kps, trg_kps))
 
-            # notebook: campiona con cap
-            N = min(n_pairs_per_combination, len(possible_pairs))
+            # Sample n_pairs_per_combination from all the possible pairs for this family combination
+            N = min(n_pairs_per_combination, len(possible_pairs)) # Prevents taking more pair than available
             if N <= 0:
                 continue
-
             pairs_sampled = rng.sample(possible_pairs, N)
 
             # category = supercategoryA-supercategoryB

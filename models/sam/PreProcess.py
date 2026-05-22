@@ -11,19 +11,19 @@ class PreProcess(object):
         for key in ["src", "trg"]:
             img = sample[f"{key}_img"]  # CHW
 
-            # original size coerente con kps/bbox (prima del resize SAM)
+            # original size coherent with kps/bbox before resize
             H, W = int(img.shape[-2]), int(img.shape[-1])
 
-            #img_resized = self.transform.apply_image_torch(img.unsqueeze(0))  # BCHW
+            # Resize based on transform.apply_image_torch
             new_h, new_w = self.transform.get_preprocess_shape(H, W, 1024)
             img_resized= F.interpolate(img.unsqueeze(0), (new_h, new_w), mode="bilinear", align_corners=False, antialias=True)
 
-            # scala coords e bbox con le utilità SAM
+            # Scale coordinates
             sample[f"{key}_kps"] = self.transform.apply_coords_torch(
                 sample[f"{key}_kps"], (H, W)
             )
 
-            # bbox: assicurati sia tensor float, shape (1,4) per apply_boxes_torch
+            # Scale bbox
             bb = sample[f"{key}_bndbox"]
             if not torch.is_tensor(bb):
                 bb = torch.tensor(bb, dtype=torch.float32)
@@ -34,10 +34,8 @@ class PreProcess(object):
                 bb.view(1, 4), (H, W)
             ).view(4)
 
-            # salva immagine resized
-            sample[f"{key}_img"] = img_resized
 
-            # salva scale e resized shape (utili per debug / conversioni)
+            sample[f"{key}_img"] = img_resized
             new_h, new_w = int(img_resized.shape[-2]), int(img_resized.shape[-1])
             sample[f"{key}_orig_size"] = (H, W)
             sample[f"{key}_resized_size"] = (new_h, new_w)

@@ -55,13 +55,13 @@ class SamEval:
         if self.dataset_name == "ap-10k":
             category = "all"
         if img_name in self.processed_img[category]:
-            # Carica featuremap salvata
-            img_emb = load_featuremap(img_name, self.feat_dir, self.device)  # [C,h',w']
+            # Load saved featuremap
+            img_emb = load_featuremap(img_name, self.feat_dir, self.device)
             return img_emb
 
         img_tensor = img_tensor.to(self.device)  # [1,3,H,W]
         self.predictor.set_torch_image(img_tensor, img_size)
-        img_emb = self.predictor.get_image_embedding()[0]  # [C,h',w']
+        img_emb = self.predictor.get_image_embedding()[0]
         self.processed_img[category].add(img_name)
         save_featuremap(img_emb, img_name, self.feat_dir)
 
@@ -89,34 +89,33 @@ class SamEval:
                 src_emb = self._compute_features(batch["src_img"], batch["src_orig_size"], src_imname, category)
                 trg_emb = self._compute_features(batch["trg_img"], batch["trg_orig_size"], trg_imname, category)
 
-                # Keypoints (N,2) in pixel resized, ordine (x,y)
+                # Keypoints (x, y) in pixel resized
                 src_kps = batch["src_kps"].to(self.device)
                 trg_kps = batch["trg_kps"].to(self.device)
 
-                # Dimensioni originali (H,W) e resized (new_h,new_w) già nel batch
+                # Resized dimension of the source and target images
                 Hs_prime, Ws_prime = batch["src_resized_size"]
-
                 Ht_prime, Wt_prime = batch["trg_resized_size"]
 
-                # Regione valida in token-space (NO padding), con PATCH tipico SAM = 16
-                hv_s = (Hs_prime + PATCH - 1) // PATCH
-                wv_s = (Ws_prime + PATCH - 1) // PATCH
-
-                hv_t = (Ht_prime + PATCH - 1) // PATCH
-                wv_t = (Wt_prime + PATCH - 1) // PATCH
+                # Because the images were padded during preprocessing, extract the number of valid patches from the featuremaps
+                hv_s = math.ceil(Hs_prime / PATCH)
+                wv_s = math.ceil(Ws_prime / PATCH)
+                hv_t = math.ceil(Ht_prime / PATCH)
+                wv_t = math.ceil(Wt_prime / PATCH)
 
                 # (opzionale) clamp su griglia encoder (di solito 1024/16 = 64)
-                grid = IMG_SIZE // PATCH  # es. 1024//16 = 64
-                hv_s = min(hv_s, grid)
-                wv_s = min(wv_s, grid)
-                hv_t = min(hv_t, grid)
-                wv_t = min(wv_t, grid)
+                #grid = IMG_SIZE // PATCH  # es. 1024//16 = 64
+                #hv_s = min(hv_s, grid)
+                #wv_s = min(wv_s, grid)
+                #hv_t = min(hv_t, grid)
+                #wv_t = min(wv_t, grid)
 
-                # ---- taglia embeddings alla regione valida ----
-                # src_valid: [C, hv_s, wv_s], trg_valid: [C, hv_t, wv_t]
+                # Clamp embeddings [C, 64, 64] to the valid region, keeping only the first hv and ws patches
                 src_valid = src_emb[:, :hv_s, :wv_s]
                 trg_valid = trg_emb[:, :hv_t, :wv_t]
 
+                # Flatten valid target feature map to [Pvalid, C]
+                # permute: [C,H,W] -> [H,W,C], reshape: [H,W,C] -> [H*W,C]
                 C_ft = trg_valid.shape[0]
                 trg_flat = trg_valid.permute(1, 2, 0).reshape(-1, C_ft)  # [Pvalid, C]
 
@@ -133,7 +132,7 @@ class SamEval:
                     if torch.isnan(src_kp).any() or torch.isnan(trg_kp).any():
                         continue
 
-                    # ---- src pixel (resized) -> src token idx ----
+                    # Convert the keypoint of the resizes source image into a patch index
                     x_idx, y_idx = pixel_to_patch_idx(
                         src_kp,
                         stride=PATCH,
@@ -141,24 +140,25 @@ class SamEval:
                         img_hw=(Hs_prime, Ws_prime),
                     )
 
-                    # vettore feature sorgente: [C]
+                    # Get the feature vector corresponding to the selected patch index
                     src_vec = src_valid[:, y_idx, x_idx]
 
-                    # cosine similarity su tutti i token target validi
-                    sim = torch.nn.functional.cosine_similarity(trg_flat, src_vec.unsqueeze(0), dim=1)  # [Pvalid]
+                    # Compute cosine similarity between each valid target patch and the source patch embedding.
+                    # sim is flattened over valid target patch
+                    sim = torch.nn.functional.cosine_similarity(trg_flat, src_vec.unsqueeze(0), dim=1)
                     sim_2d = sim.view(hv_t, wv_t)  # [hv_t, wv_t]
 
-                    # soft-argmax o argmax classico
+                    # soft-argmax o argmax
                     y_pred_patch, x_pred_patch = soft_argmax_window(
                         sim_2d,
                         window_radius=self.wsam_win_radius,
                         temperature=self.wsam_temp
                     )
 
-                    # ---- token -> pixel nello spazio resized ----
+                    # Remap the predicted patch to the pixel space of the resized image
                     x_pred, y_pred = patch_idx_to_pixel((x_pred_patch, y_pred_patch), stride=PATCH)
 
-                    # distanza in pixel originali
+                    # Compute the distance in pixels between the prediction and the ground truth
                     dx = x_pred - float(trg_kp[0])
                     dy = y_pred - float(trg_kp[1])
                     dist = math.sqrt(dx * dx + dy * dy)
