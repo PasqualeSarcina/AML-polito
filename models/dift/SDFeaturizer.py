@@ -42,72 +42,99 @@ class SDFeaturizer:
 
     def encode_image_caption_prompt(
             self,
-            img_tensor: torch.Tensor
-    ) -> torch.FloatTensor:
+            img_tensor: torch.Tensor,
+            category: str | None = None
+    ) -> tuple[torch.FloatTensor, str]:
         """
-        Genera una caption con BLIP a partire dal tensore immagine originale
-        non preprocessato, usa SOLO quella caption come prompt per Stable Diffusion
-        e restituisce il prompt embedding.
+        Genera una caption BLIP dal tensore originale e la converte
+        in prompt embedding per Stable Diffusion.
 
-        Input atteso:
-        - img_tensor: [C, H, W]
-          oppure [1, C, H, W]
+        Usa decoding più controllato per ridurre artefatti tipo:
+        arafed, arafly, araflane, ecc.
 
-        Il tensore può essere:
-        - uint8 in [0, 255]
-        - float in [0, 255]
-        - float in [0, 1]
-        - eventualmente float in [-1, 1]
+        Input:
+        - img_tensor: tensore originale [C, H, W] oppure [1, C, H, W]
+        - category: opzionale, usata come prefix per guidare BLIP
 
         Ritorna:
         - prompt_embeds: [1, 77, dim]
-        - prompt: caption generata da BLIP e usata come prompt
+        - prompt usato
         """
 
         with torch.no_grad():
             img = img_tensor.detach().cpu()
 
-            # Se arriva una batch, prendo la prima immagine
             if img.dim() == 4:
                 img = img[0]
 
             if img.dim() != 3:
                 raise ValueError(
-                    f"Expected image tensor with shape [C, H, W] or [1, C, H, W], got {img.shape}"
+                    f"Expected [C, H, W] or [1, C, H, W], got {img.shape}"
                 )
 
-            # Se immagine grayscale, la porto a 3 canali
+            # Se arriva HWC invece di CHW
+            if img.shape[0] not in [1, 3] and img.shape[-1] in [1, 3]:
+                img = img.permute(2, 0, 1)
+
+            # Grayscale -> RGB
             if img.shape[0] == 1:
                 img = img.repeat(3, 1, 1)
 
-            # Tengo solo i primi 3 canali se per qualche motivo arriva RGBA
+            # RGBA o più canali -> RGB
             if img.shape[0] > 3:
                 img = img[:3]
 
             img = img.float()
 
-            # Gestione automatica del range
+            # Range automatico
             if img.min() < 0:
-                # caso [-1, 1]
                 img = (img + 1.0) / 2.0
             elif img.max() > 1.0:
-                # caso [0, 255]
                 img = img / 255.0
 
             img = img.clamp(0.0, 1.0)
 
-            # Tensor [C, H, W] -> PIL Image
             pil_img = transforms.ToPILImage()(img).convert("RGB")
 
-            # BLIP genera la caption
-            inputs = self.blip_processor(
-                images=pil_img,
-                return_tensors="pt"
-            ).to(self.device)
+            if category is not None:
+                prefix = f"a photo of a {category}"
+                inputs = self.blip_processor(
+                    images=pil_img,
+                    text=prefix,
+                    return_tensors="pt"
+                ).to(self.device)
+            else:
+                inputs = self.blip_processor(
+                    images=pil_img,
+                    return_tensors="pt"
+                ).to(self.device)
+
+            bad_words = [
+                "arafed",
+                "arafly",
+                "araflane",
+                "araflanes",
+                "araffe",
+                "araffle",
+            ]
+
+            bad_words_ids = [
+                self.blip_processor.tokenizer(
+                    word,
+                    add_special_tokens=False
+                ).input_ids
+                for word in bad_words
+            ]
 
             generated_ids = self.blip_model.generate(
                 **inputs,
-                max_new_tokens=30
+                max_new_tokens=20,
+                num_beams=5,
+                do_sample=False,
+                bad_words_ids=bad_words_ids,
+                no_repeat_ngram_size=2,
+                repetition_penalty=1.2,
+                early_stopping=True
             )
 
             caption = self.blip_processor.decode(
@@ -115,15 +142,12 @@ class SDFeaturizer:
                 skip_special_tokens=True
             ).strip()
 
-            # Uso SOLO la caption come prompt
             prompt = caption
 
             print(f"Generated BLIP prompt: {prompt}")
 
-            # Stable Diffusion text encoder
             prompt_embeds = self._encode_prompt_embeds(prompt)
 
-            gc.collect()
             return prompt_embeds
 
     def encode_category_prompts(self, cat_list) -> dict:

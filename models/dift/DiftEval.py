@@ -55,7 +55,7 @@ class DiftEval:
         if self.use_blip:
 
             prompt_embed = self.featurizer.encode_image_caption_prompt(
-                img_tensor=og_tensor
+                img_tensor=og_tensor, category= category
             )
 
         else:
