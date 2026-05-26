@@ -1,17 +1,12 @@
-import gc
 import math
 from collections import defaultdict
 from pathlib import Path
 from typing import List
 
 import torch
-from torch.utils.data import DataLoader
-from tqdm import tqdm
 import torch.nn.functional as F
-from data.ap10k import AP10KDataset
-from data.pfpascal import PFPascalDataset
-from data.pfwillow import PFWillowDataset
-from data.spair import SPairDataset
+from tqdm import tqdm
+
 from models.dift.PreProcess import PreProcess
 from models.dift.SDFeaturizer import SDFeaturizer
 from utils.soft_argmax_window import soft_argmax_window
@@ -43,7 +38,9 @@ class DiftEval:
         self.dataset, self.dataloader = init_dataloader(self.dataset_name, base_dir=self.base_dir, datatype='test', transform=transform)
 
         self.processed_img = defaultdict(set)
-
+        self.featmap_size: tuple[int, int] = (48, 48)  # H,W
+        self.H, self.W = self.featmap_size
+        self.P = self.H * self.W
         categories = self.dataset.get_categories()
         self.prompt_embeds = self.featurizer.encode_category_prompts(categories)
 
