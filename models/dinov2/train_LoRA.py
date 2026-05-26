@@ -179,7 +179,7 @@ def fine_tuning(epochs, lr, w_decay, accumulation_steps=8):
                 best_val_loss=avg_val_loss
                 os.makedirs("checkpoints", exist_ok=True)
                 # Save the weights
-                model.save_pretrained("checkpoints/best_model")
+                model.save_pretrained("checkpoints_LoRA/best_model")
                 print(f"--> New Best Model Saved! (Loss: {best_val_loss:.4f})")
 
 if __name__ == '__main__':
