@@ -29,7 +29,7 @@ class DiftEval:
         self.base_dir = args.base_dir
         self.enseble_size = args.ensemble_size
         self.timestep = args.timestep
-
+        self.use_blip = True
         self.featurizer = SDFeaturizer(device=self.device)
 
         self.feat_dir = Path(self.base_dir) / "data" / "features" / "dift"
@@ -42,7 +42,7 @@ class DiftEval:
         categories = self.dataset.get_categories()
         self.prompt_embeds = self.featurizer.encode_category_prompts(categories)
 
-    def compute_features(self, img_tensor: torch.Tensor, img_name: str,
+    def compute_features(self, img_tensor: torch.Tensor, og_tensor: torch.Tensor, img_name: str,
                           category: str, up_ft_index: list[int] | int = 1, t:int = 261) -> torch.Tensor:
         if self.dataset_name == "ap-10k":
             category_opt = "all"
@@ -52,7 +52,14 @@ class DiftEval:
             unet_ft = load_featuremap(img_name, self.feat_dir, self.device)
             return unet_ft
 
-        prompt_embed = self.prompt_embeds[category_opt]  # (1,77,dim)
+        if self.use_blip:
+
+            prompt_embed = self.featurizer.encode_image_caption_prompt(
+                img_tensor=og_tensor
+            )
+
+        else:
+            prompt_embed = self.prompt_embeds[category_opt]
 
         unet_ft = self.featurizer.forward(
             img_tensor=img_tensor,
@@ -80,8 +87,8 @@ class DiftEval:
                 category = batch["category"]
 
                 # features: [1,C,48,48]
-                src_ft = self.compute_features(batch["src_img"], batch["src_imname"], category)
-                trg_ft = self.compute_features(batch["trg_img"], batch["trg_imname"], category)
+                src_ft = self.compute_features(batch["src_img"], batch["src_img_original"], batch["src_imname"], category)
+                trg_ft = self.compute_features(batch["trg_img"], batch["trg_img_original"], batch["trg_imname"], category)
 
                 if src_ft.ndim == 3:  # [C,48,48] -> [1,C,48,48]
                     src_ft = src_ft.unsqueeze(0)

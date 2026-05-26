@@ -27,8 +27,11 @@ class PreProcess(object):
     def __call__(self, sample: dict[str, Any]):
         h_out, w_out = self.out_dim
 
+
         for key in ['src', 'trg']:
             img = sample[f'{key}_img']
+            sample[f'{key}_img_original'] = img
+
             _, h, w = img.shape
             sy, sx = h_out / h, w_out / w
 

@@ -4,8 +4,12 @@ from pathlib import Path
 
 import torch
 from diffusers import DDIMScheduler
+from torchvision import transforms
+
 from models.dift.CustomUNet2D import CustomUNet2D
 from models.dift.OneStepSDPipeline import OneStepSDPipeline
+
+from transformers import BlipProcessor, BlipForConditionalGeneration
 
 
 class SDFeaturizer:
@@ -25,6 +29,102 @@ class SDFeaturizer:
         except:
             print("xformers is not installed, running without it.")
         self.pipe = onestep_pipe
+
+        self.blip_processor = BlipProcessor.from_pretrained(
+            "Salesforce/blip-image-captioning-large"
+        )
+
+        self.blip_model = BlipForConditionalGeneration.from_pretrained(
+            "Salesforce/blip-image-captioning-large"
+        ).to(self.device)
+
+        self.blip_model.eval()
+
+    def encode_image_caption_prompt(
+            self,
+            img_tensor: torch.Tensor
+    ) -> torch.FloatTensor:
+        """
+        Genera una caption con BLIP a partire dal tensore immagine originale
+        non preprocessato, usa SOLO quella caption come prompt per Stable Diffusion
+        e restituisce il prompt embedding.
+
+        Input atteso:
+        - img_tensor: [C, H, W]
+          oppure [1, C, H, W]
+
+        Il tensore può essere:
+        - uint8 in [0, 255]
+        - float in [0, 255]
+        - float in [0, 1]
+        - eventualmente float in [-1, 1]
+
+        Ritorna:
+        - prompt_embeds: [1, 77, dim]
+        - prompt: caption generata da BLIP e usata come prompt
+        """
+
+        with torch.no_grad():
+            img = img_tensor.detach().cpu()
+
+            # Se arriva una batch, prendo la prima immagine
+            if img.dim() == 4:
+                img = img[0]
+
+            if img.dim() != 3:
+                raise ValueError(
+                    f"Expected image tensor with shape [C, H, W] or [1, C, H, W], got {img.shape}"
+                )
+
+            # Se immagine grayscale, la porto a 3 canali
+            if img.shape[0] == 1:
+                img = img.repeat(3, 1, 1)
+
+            # Tengo solo i primi 3 canali se per qualche motivo arriva RGBA
+            if img.shape[0] > 3:
+                img = img[:3]
+
+            img = img.float()
+
+            # Gestione automatica del range
+            if img.min() < 0:
+                # caso [-1, 1]
+                img = (img + 1.0) / 2.0
+            elif img.max() > 1.0:
+                # caso [0, 255]
+                img = img / 255.0
+
+            img = img.clamp(0.0, 1.0)
+
+            # Tensor [C, H, W] -> PIL Image
+            pil_img = transforms.ToPILImage()(img).convert("RGB")
+
+            # BLIP genera la caption
+            inputs = self.blip_processor(
+                images=pil_img,
+                return_tensors="pt"
+            ).to(self.device)
+
+            generated_ids = self.blip_model.generate(
+                **inputs,
+                max_new_tokens=30
+            )
+
+            caption = self.blip_processor.decode(
+                generated_ids[0],
+                skip_special_tokens=True
+            ).strip()
+
+            # Uso SOLO la caption come prompt
+            prompt = caption
+
+            print(f"Generated BLIP prompt: {prompt}")
+
+            # Stable Diffusion text encoder
+            prompt_embeds = self._encode_prompt_embeds(prompt)
+
+            gc.collect()
+            return prompt_embeds
 
     def encode_category_prompts(self, cat_list) -> dict:
         with torch.no_grad():
