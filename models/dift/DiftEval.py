@@ -22,6 +22,10 @@ from utils.utils_results import CorrespondenceResult
 
 
 class DiftEval:
+
+    PCA_DIMS = [256, 256, 256]  # s5,s4,s3
+    WEIGHT = [1, 1, 1, 1, 1]  # [w_s5,w_s4,w_s3,w_sd,w_dino]
+
     def __init__(self, args):
         self.dataset_name = args.dataset
         self.wsam_win_radius = args.wsam_win_radius
