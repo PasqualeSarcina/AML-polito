@@ -133,17 +133,18 @@ class DiftEval:
         sd_src_desc = sd_src_proc.reshape(1, -1, self.P).permute(0, 2, 1).unsqueeze(1).contiguous()
         sd_trg_desc = sd_trg_proc.reshape(1, -1, self.P).permute(0, 2, 1).unsqueeze(1).contiguous()
 
-        # pesi intra-SD (su dims reali)
+        # pesi intra-SD sulle tre scale, applicati sui canali
         d0, d1, d2 = dims_used
-        sd_src_desc[..., :d0] *= self.WEIGHT[0]
-        sd_src_desc[..., d0:d0 + d1] *= self.WEIGHT[1]
-        sd_src_desc[..., d0 + d1:d0 + d1 + d2] *= self.WEIGHT[2]
 
-        sd_trg_desc[..., :d0] *= self.WEIGHT[0]
-        sd_trg_desc[..., d0:d0 + d1] *= self.WEIGHT[1]
-        sd_trg_desc[..., d0 + d1:d0 + d1 + d2] *= self.WEIGHT[2]
+        sd_src_proc[:, :d0, :, :] *= self.WEIGHT[0]
+        sd_src_proc[:, d0:d0 + d1, :, :] *= self.WEIGHT[1]
+        sd_src_proc[:, d0 + d1:d0 + d1 + d2, :, :] *= self.WEIGHT[2]
 
-        return sd_src_desc, sd_trg_desc, dims_used
+        sd_trg_proc[:, :d0, :, :] *= self.WEIGHT[0]
+        sd_trg_proc[:, d0:d0 + d1, :, :] *= self.WEIGHT[1]
+        sd_trg_proc[:, d0 + d1:d0 + d1 + d2, :, :] *= self.WEIGHT[2]
+
+        return sd_src_proc, sd_trg_proc, dims_used
 
 
 
