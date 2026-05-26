@@ -11,7 +11,7 @@ from tqdm import tqdm
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data.task3_DINOv2_dataset import SPairDataset
 from utils.setup_data import setup_data
-from task2_dinov2.loss import InfoNCELoss
+from utils.loss import InfoNCELoss
 
 
 data_root = setup_data() 
