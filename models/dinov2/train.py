@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from data.task3_DINOv2_dataset import SPairDataset
+from data.dataset_DINOv2 import SPairDataset
 from utils.setup_data import setup_data
 from utils.loss import InfoNCELoss
 
