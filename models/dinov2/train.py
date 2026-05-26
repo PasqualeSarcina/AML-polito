@@ -5,6 +5,7 @@ import sys
 import os
 import random
 import numpy as np
+import argparse
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -61,7 +62,7 @@ def seed_everything(seed=42):
     torch.backends.cudnn.deterministic = True
     print(f">>> SEED SET TO {seed} <<<")
 
-def fine_tuning(epochs, lr, w_decay, n_layers):
+def fine_tuning(epochs, lr, w_decay, n_layers, accumulation_steps=8):
     seed_everything(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14').to(device)
@@ -85,7 +86,6 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
     scaler = torch.amp.GradScaler('cuda')
     num_epochs = epochs
     best_val_loss=float('inf')
-    accumulation_steps = 8  
 
     for epoch in range(num_epochs):
         model.train()
@@ -173,7 +173,21 @@ def fine_tuning(epochs, lr, w_decay, n_layers):
                 print(f"--> New Best Model Saved (Loss: {best_val_loss:.4f})")
 
 if __name__ == '__main__':
-    fine_tuning(epochs=5, lr=1e-5, w_decay=1e-2, n_layers=1)
+    parser = argparse.ArgumentParser(description="Fine-tune DINOv2")
+    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
+    parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate")
+    parser.add_argument("--w_decay", type=float, default=1e-2, help="Weight decay")
+    parser.add_argument("--n_layers", type=int, default=1, help="Number of layers to fine-tune")
+    parser.add_argument("--accumulation_steps", type=int, default=8, help="Gradient accumulation steps")
+    args = parser.parse_args()
+    
+    fine_tuning(
+        epochs=args.epochs,
+        lr=args.lr,
+        w_decay=args.w_decay,
+        n_layers=args.n_layers,
+        accumulation_steps=args.accumulation_steps
+    )
    
 
 
