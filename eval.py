@@ -20,6 +20,7 @@ def build_parser():
 
     sam = model.add_parser("sam")
     sam.add_argument("--custom-weights", type=str, required=False, help="path to custom weights")
+    sam.add_argument("--lora", type=str, required=False, help="path to LoRA weights")
 
     dift = model.add_parser("dift")
     dift.add_argument("--fuse-dino", type=bool, required=False, help="path to custom weights")
@@ -29,7 +30,7 @@ def build_parser():
     dift.add_argument("--timestep", type=int, default=100, required=False, help="Number of diffusion timesteps")
 
     win_soft_argmax = parser.add_argument_group('win_soft_argmax')
-    win_soft_argmax.add_argument('--wsam-win-radius', type=int, default=3, help='Window radius for windowed soft argmax')
+    win_soft_argmax.add_argument('--wsam-win-radius', type=int, default=0, help='Window radius for windowed soft argmax')
     win_soft_argmax.add_argument('--wsam-temp', type=float, default=0.05,
                                  help='Temperature for windowed soft argmax')
 

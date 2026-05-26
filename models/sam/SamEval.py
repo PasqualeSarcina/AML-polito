@@ -2,6 +2,7 @@ import math
 import os
 from collections import defaultdict
 from pathlib import Path
+from peft import PeftModel
 
 import torch
 from segment_anything import SamPredictor, sam_model_registry
@@ -22,6 +23,7 @@ class SamEval:
         self.custom_weights = args.custom_weights
         self.wsam_win_radius = args.wsam_win_radius
         self.wsam_temp = args.wsam_temp
+        self.lora = args.lora
         self.device = args.device
         self.base_dir = args.base_dir
         self._init_model()
@@ -45,6 +47,11 @@ class SamEval:
                 raise FileNotFoundError(f"SAM checkpoint not found at {sam_checkpoint}")
 
         sam = sam_model_registry["vit_b"](checkpoint=sam_checkpoint)
+
+        if self.lora is not None:
+            assert os.path.exists(self.lora), "lora checkpoint not found at {}".format(self.lora)
+            sam.image_encoder = PeftModel.from_pretrained(sam.image_encoder, self.lora)
+
         sam.to(self.device)
         sam.eval()
         self.predictor = SamPredictor(sam)
