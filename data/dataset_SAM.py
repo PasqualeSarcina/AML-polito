@@ -1,8 +1,8 @@
-#CREAZIONE DATASET E DATALOADER
 import os
 import torch
 from torch.utils.data import Dataset
 import torch.nn.functional as F
+from torchvision.transforms import v2
 from PIL import Image
 import numpy as np
 import json
@@ -10,56 +10,81 @@ import random
 from segment_anything.utils.transforms import ResizeLongestSide
 
 class SAMTransform(object):
-    def __init__(self, target_size=1024):
+    def __init__(self, target_size=1024, datatype='trn'):
         self.target_size = target_size
-        self.transform_official = ResizeLongestSide(target_size)
+        self.resizer = ResizeLongestSide(target_size)
         self.pixel_mean = torch.tensor([123.675, 116.28, 103.53]).view(-1, 1, 1)
         self.pixel_std = torch.tensor([58.395, 57.12, 57.375]).view(-1, 1, 1)
-
-    def __call__(self, sample):
-        sample = sample.copy()
+        self.mode = datatype
+        self.color_jitter = v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1)
+        self.blur = v2.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0))
         
-        pairs = [('src_img', 'src_kps', 'src_bbox'), ('trg_img', 'trg_kps', 'trg_bbox')]
+    def __call__(self, sample):
+        do_flip = (self.mode == 'trn') and (random.random() > 0.5)
 
-        for img_key, kps_key, bbox_key in pairs:
-            img = sample[img_key]
-            
-            original_h, original_w = img.shape[-2:]
-            
-            new_h, new_w = self.transform_official.get_preprocess_shape(original_h, original_w, self.target_size)
+        for key in ["src", "trg"]:
+            img = sample[f"{key}_img"]  # CHW
+            H, W = int(img.shape[-2]), int(img.shape[-1])
 
-            scale_h = new_h / original_h
-            scale_w = new_w / original_w
-            scale = scale_h
+            # AUGMENTATION
+            if do_flip:
+                img = torch.flip(img, dims=[-1])                            # flip image
 
-            img = F.interpolate(img.unsqueeze(0), size=(new_h, new_w), mode='bilinear', align_corners=False)[0]
-            
-            img = (img - self.pixel_mean) / self.pixel_std
+                sample[f"{key}_kps"][:, 0] = W - sample[f"{key}_kps"][:, 0] # flip keypoints
 
-            pad_h = self.target_size - new_h
-            pad_w = self.target_size - new_w
-            # Pad order: (left, right, top, bottom)
-            img = F.pad(img, (0, pad_w, 0, pad_h), value=0)
+                bb = sample[f"{key}_bndbox"]                                # flip bndbox
+                x1, y1, x2, y2 = bb[0], bb[1], bb[2], bb[3]
+                new_x1 = W - x2
+                new_x2 = W - x1
+                sample[f"{key}_bndbox"] = torch.tensor([new_x1, y1, new_x2, y2])
 
-            if kps_key in sample:
-                sample[kps_key] = sample[kps_key] * scale
-            
-            if bbox_key in sample:
-                sample[bbox_key] = sample[bbox_key] * scale
+            if self.mode=='trn':
+                if random.random() > 0.5:
+                    img = self.color_jitter(img)
+                if random.random() > 0.5:
+                    img = self.blur(img)
 
-            sample[img_key] = img
+            # RESIZING
+            # resizing immagine
+            newh, neww = self.resizer.get_preprocess_shape(H, W, self.target_size)
+            img_resized = F.interpolate(img.unsqueeze(0), (newh, neww), mode="bilinear", align_corners=False, antialias=True)[0]
 
-            if img_key == 'trg_img':
-                sample['pck_threshold'] = sample['pck_threshold'] * scale
-                sample['scale'] = scale
-                sample['pad_w'] = pad_w
-                sample['pad_h'] = pad_h
+            # scala coordinate keypoints
+            sample[f"{key}_kps"] = self.resizer.apply_coords_torch(         # N, 2
+                sample[f"{key}_kps"], (H, W)
+            )
+
+            # bbox: assicuriamoci sia tensor float, shape (1,4) per apply_boxes_torch
+            bb = sample[f"{key}_bndbox"]
+            if not torch.is_tensor(bb):
+                bb = torch.tensor(bb, dtype=torch.float32)
+            else:
+                bb = bb.float()
+
+            # scala coordinate boundingbox
+            sample[f"{key}_bndbox"] = self.resizer.apply_boxes_torch(     
+                bb.view(1, 4), (H, W)
+            ).view(4)                                                       # 4
+
+            # IMAGE NORMALIZATION AND PADDING
+            # normalize colors
+            img_resized = (img_resized - self.pixel_mean) / self.pixel_std
+            # Pad
+            padh = self.target_size - newh
+            padw = self.target_size - neww
+            img_resized = F.pad(img_resized, (0, padw, 0, padh))
+
+            # immagine resized + normalized + padding
+            sample[f"{key}_img"] = img_resized.squeeze(0)   # C, H', W'
+            sample[f"{key}_orig_size"] = (H, W)
+            sample[f"{key}_resized_size"] = (newh, neww)
+            sample[f"{key}_scale"] = (newh / H, neww / W)  # (sy, sx)
 
         return sample
     
 def read_img(path):
-    img = np.array(Image.open(path).convert('RGB'))
-    return torch.tensor(img.transpose(2, 0, 1).astype(np.float32))
+    img = np.array(Image.open(path).convert('RGB'), dtype=np.float32)
+    return torch.from_numpy(img).permute(2,0,1)
 
 class SPairDataset(Dataset):
     def __init__(self, pair_ann_path, layout_path, image_path, dataset_size, pck_alpha, datatype):
@@ -76,7 +101,7 @@ class SPairDataset(Dataset):
         with open(split_file, "r") as f:
             self.ann_files = [line.strip() for line in f.readlines() if line.strip()]
 
-        self.transform = SAMTransform(target_size=1024)
+        self.transform = SAMTransform(1024, datatype)
 
     def __len__(self):
         return len(self.ann_files)
@@ -97,21 +122,17 @@ class SPairDataset(Dataset):
         src_img = read_img(os.path.join(self.image_path, category, annotation['src_imname']))
         trg_img = read_img(os.path.join(self.image_path, category, annotation['trg_imname']))
 
-        raw_src_kps = torch.tensor(annotation['src_kps']).float()
+        raw_src_kps = torch.tensor(annotation['src_kps']).float()   # lista di coordinate x,y es. ((1,2), (3,4), (5,6))
         raw_trg_kps = torch.tensor(annotation['trg_kps']).float()
-        num_kps = raw_src_kps.shape[0]
+        num_kps = raw_src_kps.shape[0]                              # numero di kps  es. 3
 
-        src_kps = torch.zeros((self.max_kps, 2))
+        src_kps = torch.zeros((self.max_kps, 2))                    # [max_kps, 2]  ((0, 0),...(0,0))
         trg_kps = torch.zeros((self.max_kps, 2))
+        kps_valid = torch.zeros(self.max_kps, dtype=torch.bool)     # [max_kps] (False, False, ..., False)
 
-        kps_valid = torch.zeros(self.max_kps, dtype=torch.bool)
-
-        src_kps[:num_kps] = raw_src_kps
+        src_kps[:num_kps] = raw_src_kps                             # [max_kps, 2] ((1,2), (3,4), (5,6), (0, 0),...(0,0))
         trg_kps[:num_kps] = raw_trg_kps
-        kps_valid[:num_kps] = True
-
-        trg_bbox = annotation['trg_bndbox']
-        pck_threshold = max(trg_bbox[2] - trg_bbox[0], trg_bbox[3] - trg_bbox[1]) * self.pck_alpha
+        kps_valid[:num_kps] = True                                  # [max_kps] (True, True, True, False, ..., False)
 
         sample = {
             'src_img': src_img,
@@ -121,10 +142,10 @@ class SPairDataset(Dataset):
             'kps_valid': kps_valid,
             'num_kps': num_kps,
             'category': category,
-            'pck_threshold': pck_threshold,
-            'src_bbox': torch.tensor(annotation['src_bndbox']).float(),
-            'trg_bbox': torch.tensor(annotation['trg_bndbox']).float()
+            'src_bndbox': torch.tensor(annotation['src_bndbox']).float(),
+            'trg_bndbox': torch.tensor(annotation['trg_bndbox']).float()
         }
-
+        
+        # scala immagine, keypoints e bounding box
         if self.transform: sample = self.transform(sample)
         return sample

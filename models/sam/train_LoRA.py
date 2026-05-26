@@ -51,7 +51,7 @@ def lora_training(model, train_loader, val_loader, device, epochs, lr, accumulat
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
                             lr=lr)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    criterion = InfoNCELoss(temperature=0.07).to(device)
+    criterion = InfoNCELoss(temperature=0.07, patch_size=16).to(device)
     best_val_loss = float('inf')
 
     print(f"Inizio Training per {epochs} epoche")
@@ -59,7 +59,6 @@ def lora_training(model, train_loader, val_loader, device, epochs, lr, accumulat
     for epoch in range(epochs):
         model.train()
         train_loss = 0
-        steps = 0
         optimizer.zero_grad()
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1} [TRAIN]")
 
@@ -76,25 +75,21 @@ def lora_training(model, train_loader, val_loader, device, epochs, lr, accumulat
                 loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
                 loss = loss / accumulation_steps
 
-            if loss.item() > 0:
-                scaler.scale(loss).backward()
+            scaler.scale(loss).backward()
 
-                if (i + 1) % accumulation_steps == 0 or (i+1) == len(train_loader):
-                    scaler.step(optimizer)
-                    scaler.update()
-                    optimizer.zero_grad()
+            if (i + 1) % accumulation_steps == 0 or (i+1) == len(train_loader):
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
 
-                current_loss = loss.item() * accumulation_steps
-                train_loss += current_loss
-                steps += 1
-                pbar.set_postfix({'loss': train_loss / max(steps, 1)})
+            train_loss += loss.item() * accumulation_steps
+            pbar.set_postfix({'loss': train_loss / max(i, 1)})
 
-        avg_train_loss = train_loss / max(steps, 1)
+        avg_train_loss = train_loss / len(train_loader)
         scheduler.step()
 
         model.eval()
         val_loss = 0
-        val_steps = 0
         torch.cuda.empty_cache()
 
         with torch.no_grad():
@@ -110,11 +105,9 @@ def lora_training(model, train_loader, val_loader, device, epochs, lr, accumulat
                     feats_trg = model.image_encoder(trg)
                     loss = criterion(feats_src, feats_trg, kps_src, kps_trg, kps_mask)
 
-                if loss.item() > 0:
-                    val_loss += loss.item()
-                    val_steps += 1
+                val_loss += loss.item()
 
-        avg_val_loss = val_loss / max(val_steps, 1)
+        avg_val_loss = val_loss / len(val_loader)
 
         print(f"\nEPOCA {epoch+1} COMPLETATA:")
         print(f"Training Loss:   {avg_train_loss:.4f}")
