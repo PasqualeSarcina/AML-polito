@@ -5,13 +5,14 @@ import sys
 import os
 import random
 import numpy as np
+import argparse
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from peft import LoraConfig, get_peft_model
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from data.dataset_DINOv2 import SPairDataset
-from utils.setup_data import setup_data
+from utils.setup_data_DINOv2 import setup_data
 from utils.loss import InfoNCELoss
 
 
@@ -62,7 +63,7 @@ def seed_everything(seed=42):
     torch.backends.cudnn.deterministic = True
     print(f">>> SEED SET TO {seed} <<<")
 
-def fine_tuning(epochs, lr, w_decay):
+def fine_tuning(epochs, lr, w_decay, accumulation_steps=8):
     seed_everything(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14').to(device)
@@ -92,7 +93,6 @@ def fine_tuning(epochs, lr, w_decay):
     scaler = torch.amp.GradScaler('cuda')
     num_epochs = epochs
     best_val_loss=float('inf')
-    accumulation_steps = 8  # Simulate batch_size = 8
     
     for epoch in range(num_epochs):
         model.train()
@@ -183,12 +183,23 @@ def fine_tuning(epochs, lr, w_decay):
                 print(f"--> New Best Model Saved! (Loss: {best_val_loss:.4f})")
 
 if __name__ == '__main__':
-    fine_tuning(epochs=5, lr=1e-4, w_decay=1e-2)
-   
-
-
+    parser = argparse.ArgumentParser(description="Fine-tune DINOv2 with LoRA")
+    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--w_decay", type=float, default=1e-2, help="Weight decay")
+    parser.add_argument("--accumulation_steps", type=int, default=8, help="Gradient accumulation steps")
+    args = parser.parse_args()
     
-    
-   
+    fine_tuning(
+        epochs=args.epochs,
+        lr=args.lr,
+        w_decay=args.w_decay,
+        accumulation_steps=args.accumulation_steps
+    )
 
-   
+
+
+
+
+
+
