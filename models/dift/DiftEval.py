@@ -40,7 +40,7 @@ class DiftEval:
         self.processed_img = defaultdict(set)
 
         categories = self.dataset.get_categories()
-        self.prompt_embeds = self.featurizer.encode_category_prompts(categories)
+        #self.prompt_embeds = self.featurizer.encode_category_prompts(categories)
 
     def compute_features(self, img_tensor: torch.Tensor, og_tensor: torch.Tensor, img_name: str,
                           category: str, up_ft_index: list[int] | int = 1, t:int = 261) -> torch.Tensor:
