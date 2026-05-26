@@ -89,12 +89,12 @@ Currently, we support finetuning for models like DINOv2 using standard gradient 
 
 **Standard Fine-Tuning**
 ```bash
-python models/dinov2/train.py --epochs 5 --lr 1e-4 --n_layers 1 --accumulation_steps 8
+python models/dinov2/train.py --epochs 5 --lr 1e-4 --w_decay 1e-2 --n_layers 1 --accumulation_steps 5
 ```
 
 **LoRA Fine-Tuning**
 ```bash
-python models/dinov2/train_LoRA.py --epochs 5 --lr 1e-4 --accumulation_steps 8 --w_decay 0.01
+python models/dinov2/train_LoRA.py --epochs 5 --lr 1e-4 --w_decay 1e-2 --accumulation_steps 8 
 ```
 
 ## Evaluation
