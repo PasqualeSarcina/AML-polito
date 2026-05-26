@@ -21,15 +21,20 @@ exp3_val   = [3.1472, 3.2705, 3.4653, 3.5530, 3.6226]
 exp4_train = [2.9947, 2.2857, 2.0230, 1.8866, 1.8293]
 exp4_val   = [3.2521, 3.2510, 3.3555, 3.3999, 3.4635]
 
+
+# EXPERIMENT 5: (LR=1e-5, n_layers=3) batchsize=5
+exp5_train = [2.0120, 1.2733, 0.9616, 0.7449, 0.6455]
+exp5_val   = [3.29, 3.8066, 4.5284, 4.6221, 5.0016]
 # --- PLOTTING ---
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
 # 1. Training Loss Plot
-ax1.plot(epochs, exp1_train, 'r--', marker='o', label='Exp 1: LR=1e-4 (High)')
-ax1.plot(epochs, exp2_train, 'b--', marker='o', label='Exp 2: LR=1e-5 (2 Layers)')
+ax1.plot(epochs, exp1_train, 'r-', marker='o', label='Exp 1: LR=1e-4 (High)')
+ax1.plot(epochs, exp2_train, 'b-', marker='o', label='Exp 2: LR=1e-5 (2 Layers)')
 ax1.plot(epochs, exp3_train, 'g-',  marker='o', linewidth=2, label='Exp 3: LR=1e-5 (1 Layer)')
 ax1.plot(epochs, exp4_train, 'o-',  marker='o', linewidth=2, label='Exp 4: LR=1e-5 (1 Layer) BS=8' )
+ax1.plot(epochs, exp5_train, 'p-',  marker='o', linewidth=2, label='Exp 5: LR=1e-5 (3 Layer) BS=5' )
 ax1.set_title("Training Loss (Lower is usually better)", fontsize=14)
 ax1.set_xlabel("Epochs")
 ax1.set_ylabel("Loss")
@@ -37,10 +42,11 @@ ax1.grid(True, linestyle='--', alpha=0.6)
 ax1.legend()
 
 # 2. Validation Loss Plot (The Important One)
-ax2.plot(epochs, exp1_val, 'r--', marker='x', label='Exp 1: Overfitting Fast')
-ax2.plot(epochs, exp2_val, 'b--', marker='x', label='Exp 2: Overfitting Slow')
+ax2.plot(epochs, exp1_val, 'r-', marker='o', label='Exp 1: Overfitting Fast')
+ax2.plot(epochs, exp2_val, 'b-', marker='o', label='Exp 2: Overfitting Slow')
 ax2.plot(epochs, exp3_val, 'g-',  marker='o', linewidth=2, label='Exp 3: Best Model (Stable)')
 ax2.plot(epochs, exp4_val, 'o-',  marker='o', linewidth=2, label='Exp 4: Overfitting Slow')
+ax2.plot(epochs, exp5_val, 'p-',  marker='o', linewidth=2, label='Exp 5: Overfitting Fast')
 ax2.set_title("Validation Loss (LOWER is BETTER)", fontsize=14)
 ax2.set_xlabel("Epochs")
 ax2.set_ylabel("Loss")

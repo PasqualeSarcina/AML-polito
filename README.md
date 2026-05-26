@@ -64,6 +64,39 @@ We focus on the following models:
 - `eval.py`: Script for evaluating models on semantic correspondence tasks.
 
 
+## Environment and Setup
+
+1. Install the required Python packages:
+```bash
+pip install -r requirements.txt
+```
+
+2. (Optional) For DINOv3, follow the specific instructions at the top of this README.
+
+## Dataset Preparation
+
+The datasets are automatically downloaded and pre-processed the first time you run an evaluation or training script. Once downloaded, everything is placed inside the `dataset/` directory. If you prefer to download them manually beforehand, you can simply run:
+
+```bash
+python utils/download_data.py
+```
+
+## Training
+
+Currently, we support finetuning for models like DINOv2 using standard gradient descent or LoRA. The training scripts use command-line arguments for easy hyperparameter tuning.
+
+### Fine-Tuning DINOv2
+
+**Standard Fine-Tuning**
+```bash
+python models/dinov2/train.py --epochs 5 --lr 1e-4 --w_decay 1e-2 --n_layers 1 --accumulation_steps 5
+```
+
+**LoRA Fine-Tuning**
+```bash
+python models/dinov2/train_LoRA.py --epochs 5 --lr 1e-4 --w_decay 1e-2 --accumulation_steps 8 
+```
+
 ## Evaluation
 To evaluate a model, use the `eval.py` script. For example, to evaluate the DINOv2 model on the SPair-71k dataset with
 default weights, run:
