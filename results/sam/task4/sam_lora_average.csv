@@ -1,0 +1,4 @@
+method,matcher,KPS 0.05,KPS 0.1,KPS 0.2,IMG 0.05,IMG 0.1,IMG 0.2,augmentation,lr,wd,batch size,rank,alpha,epoch
+SAM vit-B/16 fine-tuned (LoRA),softmax,29.281893,40.650311,54.38883,27.15495,37.89083,51.345701,True,"1,00E-04","1,00E-02",8,16,32,1
+SAM vit-B/16 fine-tuned (LoRA),softmax,26.678752,36.46661,49.716181,24.757361,34.114302,47.032738,False,"1,00E-04","1,00E-02",8,16,32,1
+SAM vit-B/16 fine-tuned (LoRA),softmax,23.463642,34.817041,48.701343,21.304927,32.037927,45.580025,True,"1,00E-05","1,00E-02",8,16,32,1

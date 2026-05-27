@@ -30,12 +30,12 @@ class SAMTransform(object):
             if do_flip:
                 img = torch.flip(img, dims=[-1])                            # flip image
 
-                sample[f"{key}_kps"][:, 0] = W - sample[f"{key}_kps"][:, 0] # flip keypoints
+                sample[f"{key}_kps"][:, 0] = W - sample[f"{key}_kps"][:, 0] + 1 # flip keypoints
 
                 bb = sample[f"{key}_bndbox"]                                # flip bndbox
                 x1, y1, x2, y2 = bb[0], bb[1], bb[2], bb[3]
-                new_x1 = W - x2
-                new_x2 = W - x1
+                new_x1 = W - x2 + 1
+                new_x2 = W - x1 + 1
                 sample[f"{key}_bndbox"] = torch.tensor([new_x1, y1, new_x2, y2])
 
             if self.mode=='trn':

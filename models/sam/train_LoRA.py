@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.cuda.amp import GradScaler, autocast
 import sys
 import os
+import argparse
 import random
 import numpy as np
 from torch.utils.data import DataLoader
@@ -11,7 +12,7 @@ from tqdm import tqdm
 from peft import LoraConfig, get_peft_model
 from segment_anything import sam_model_registry
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from utils.loss import InfoNCELoss
 from data.dataset_SAM import SPairDataset
@@ -44,12 +45,12 @@ def setup_lora_sam(model, r=16):
     return model
 
 
-def lora_training(model, train_loader, val_loader, device, epochs, lr, accumulation_steps):
+def lora_training(model, train_loader, val_loader, device, epochs, lr, wd, accumulation_steps):
     lora_path = 'checkpoints/sam_lora'
     os.makedirs(os.path.dirname(lora_path), exist_ok=True)
     scaler = GradScaler()
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
-                            lr=lr)
+                            lr=lr, weight_decay=wd)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     criterion = InfoNCELoss(temperature=0.07, patch_size=16).to(device)
     best_val_loss = float('inf')
@@ -128,6 +129,12 @@ def lora_training(model, train_loader, val_loader, device, epochs, lr, accumulat
         print("-" * 60)
     
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Fine-tune SAM with LoRA")
+    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--w_decay", type=float, default=1e-2, help="Weight decay")
+    parser.add_argument("--accumulation_steps", type=int, default=8, help="Gradient accumulation steps")
+    args = parser.parse_args()
     seed_everything(42)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -162,4 +169,4 @@ if __name__ == "__main__":
     sam_model_lora.to(device)
 
     lora_training(sam_model_lora, train_dataloader, val_dataloader, device,
-               epochs=5, lr=1e-5, accumulation_steps=8)
+               epochs=args.epochs, lr=args.lr, wd=args.w_decay, accumulation_steps=args.accumulation_steps)

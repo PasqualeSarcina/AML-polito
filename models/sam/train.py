@@ -2,6 +2,7 @@
 import os
 import sys
 import torch
+import argparse
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
@@ -12,7 +13,7 @@ import numpy as np
 import json
 from datetime import datetime
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from utils.loss import InfoNCELoss
 from utils.configure_layers import configure_model
@@ -118,6 +119,13 @@ def train_finetune(model, train_loader, val_loader, save_dir, epochs, lr, wd, ac
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Fine-tune SAM")
+    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
+    parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate")
+    parser.add_argument("--w_decay", type=float, default=1e-2, help="Weight decay")
+    parser.add_argument("--n_layers", type=int, default=1, help="Number of layers to fine-tune")
+    parser.add_argument("--accumulation_steps", type=int, default=8, help="Gradient accumulation steps")
+    args = parser.parse_args()
     seed_everything(42)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -142,11 +150,11 @@ if __name__ == "__main__":
     val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4)
     print(f"Dataset Validation caricato: {len(val_dataset)} coppie.")
 
-    n_layers = 2
-    n_epochs = 5
-    lr = 1e-5
-    wd = 1e-2
-    accumulation_steps = 8
+    n_layers = args.n_layers
+    n_epochs = args.epochs
+    lr = args.lr
+    wd = args.w_decay
+    accumulation_steps = args.accumulation_steps
     temperature = 0.07  
     configure_model(sam, unfreeze_last_n_layers=n_layers)
 
