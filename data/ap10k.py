@@ -18,6 +18,7 @@ class AP10KDataset(CorrespondenceDataset):
         self.ap10kdir = os.path.join(self.dataset_dir, 'ap-10k')
         if not os.path.exists(self.ap10kdir):
             download_ap10k(self.dataset_dir)
+        self.ap10kdir = self._resolve_dataset_dir(self.ap10kdir)
 
         self.min_kps = min_kps
 
@@ -128,6 +129,19 @@ class AP10KDataset(CorrespondenceDataset):
 
     def _build_image_path(self, imname, category=None):
         return os.path.join(self.ap10kdir, "data", imname)
+
+    @staticmethod
+    def _resolve_dataset_dir(path):
+        """Support both flat and archive-nested AP-10K directory layouts."""
+        expected_dirs = ("annotations", "data")
+        if all(os.path.isdir(os.path.join(path, name)) for name in expected_dirs):
+            return path
+
+        nested_path = os.path.join(path, "ap-10k")
+        if all(os.path.isdir(os.path.join(nested_path, name)) for name in expected_dirs):
+            return nested_path
+
+        return path
 
     @staticmethod
     def _load_jsonl_as_dict(path):
