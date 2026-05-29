@@ -1,18 +1,13 @@
-import gc
 import math
 from collections import defaultdict
 from pathlib import Path
 
 import torch
-from torch.utils.data import DataLoader
+import torch.nn.functional as F
 from tqdm import tqdm
-
-from data.ap10k import AP10KDataset
-from data.pfpascal import PFPascalDataset
-from data.pfwillow import PFWillowDataset
-from data.spair import SPairDataset
 from models.dift.PreProcess import PreProcess
 from models.dift.SDFeaturizer import SDFeaturizer
+from models.dift.pca import _compute_pca
 from utils.soft_argmax_window import soft_argmax_window
 from utils.utils_convert import pixel_to_patch_idx, patch_idx_to_pixel
 from utils.utils_featuremaps import save_featuremap, load_featuremap
@@ -21,6 +16,9 @@ from utils.utils_results import CorrespondenceResult
 
 
 class DiftEval:
+    PCA_DIMS = [256, 256, 256]  # s5,s4,s3
+    WEIGHT = [1, 1, 1]  # [w_s5,w_s4,w_s3]
+
     def __init__(self, args):
         self.dataset_name = args.dataset
         self.wsam_win_radius = args.wsam_win_radius
@@ -29,10 +27,17 @@ class DiftEval:
         self.base_dir = args.base_dir
         self.enseble_size = args.ensemble_size
         self.timestep = args.timestep
+        self.use_blip_prompt = getattr(args, "use_blip_prompt", False)
+        self.blip_model_id = "Salesforce/blip-image-captioning-base"
 
         self.featurizer = SDFeaturizer(device=self.device)
 
-        self.feat_dir = Path(self.base_dir) / "data" / "features" / "dift"
+        feat_subdir = "dift_blip" if self.use_blip_prompt else "dift"
+        self.feat_dir = Path(self.base_dir) / "data" / "features" / feat_subdir
+        self.featmap_size: tuple[int, int] = (48, 48)
+        self.H, self.W = self.featmap_size
+        self.P = self.H * self.W
+        self.sd_stride = 16
 
         transform = PreProcess(ensemble_size=self.enseble_size)
         self.dataset, self.dataloader = init_dataloader(self.dataset_name, base_dir=self.base_dir, datatype='test', transform=transform)
@@ -40,7 +45,12 @@ class DiftEval:
         self.processed_img = defaultdict(set)
 
         categories = self.dataset.get_categories()
-        self.prompt_embeds = self.featurizer.encode_category_prompts(categories)
+        self.prompt_embeds = {}
+        self.blip_prompt_embeds = {}
+        if self.use_blip_prompt:
+            self.featurizer.load_blip_captioner(self.blip_model_id)
+        else:
+            self.prompt_embeds = self.featurizer.encode_category_prompts(categories)
 
     def compute_features(self, img_tensor: torch.Tensor, img_name: str,
                           category: str, up_ft_index: list[int] | int = 1, t:int = 261) -> torch.Tensor:
@@ -52,7 +62,15 @@ class DiftEval:
             unet_ft = load_featuremap(img_name, self.feat_dir, self.device)
             return unet_ft
 
-        prompt_embed = self.prompt_embeds[category_opt]  # (1,77,dim)
+        if self.use_blip_prompt:
+            prompt_key = (category_opt, img_name)
+            if prompt_key not in self.blip_prompt_embeds:
+                prompt_embed, caption = self.featurizer.encode_blip_prompt(img_tensor, category)
+                self.blip_prompt_embeds[prompt_key] = prompt_embed
+                print(f"BLIP prompt for {img_name}: {caption}")
+            prompt_embed = self.blip_prompt_embeds[prompt_key]
+        else:
+            prompt_embed = self.prompt_embeds[category_opt]  # (1,77,dim)
 
         unet_ft = self.featurizer.forward(
             img_tensor=img_tensor,
@@ -68,10 +86,8 @@ class DiftEval:
     def evaluate(self) -> list[CorrespondenceResult]:
         results = []
 
-        # input DIFT (dopo preprocess) e grid feature
-        OUT_H = OUT_W = 768
-        HV = WV = 48
-        PATCH = OUT_W // WV   # 768/48 = 16  (patch stride effettivo)
+        out_h = self.H * self.sd_stride
+        out_w = self.W * self.sd_stride
 
         with torch.no_grad():
             for batch in tqdm(self.dataloader, total=len(self.dataloader),
@@ -79,20 +95,28 @@ class DiftEval:
 
                 category = batch["category"]
 
-                # features: [1,C,48,48]
-                src_ft = self.compute_features(batch["src_img"], batch["src_imname"], category)
-                trg_ft = self.compute_features(batch["trg_img"], batch["trg_imname"], category)
+                src_ft = self.compute_features(
+                    batch["src_img"], batch["src_imname"], category, up_ft_index=[0, 1, 2], t=self.timestep
+                )
+                trg_ft = self.compute_features(
+                    batch["trg_img"], batch["trg_imname"], category, up_ft_index=[0, 1, 2], t=self.timestep
+                )
 
-                if src_ft.ndim == 3:  # [C,48,48] -> [1,C,48,48]
-                    src_ft = src_ft.unsqueeze(0)
-                if trg_ft.ndim == 3:
-                    trg_ft = trg_ft.unsqueeze(0)
+                src_desc, trg_desc, _ = _compute_pca(
+                    src_ft,
+                    trg_ft,
+                    featmap_size=self.featmap_size,
+                    pca_dims=self.PCA_DIMS,
+                    weights=self.WEIGHT,
+                )
+                src_desc = F.normalize(src_desc, p=2, dim=-1, eps=1e-6)
+                trg_desc = F.normalize(trg_desc, p=2, dim=-1, eps=1e-6)
 
                 # keypoints già nello spazio 768×768
                 src_kps = batch["src_kps"].to(self.device)  # (N,2) in 768
                 trg_kps = batch["trg_kps"].to(self.device)  # (N,2) in 768
 
-                C = src_ft.shape[1]
+                trg_all = trg_desc[0, 0, :, :]
                 distances_this_image: list[float] = []
 
                 n_kps = min(src_kps.shape[0], trg_kps.shape[0])
@@ -106,16 +130,16 @@ class DiftEval:
                     # ---- SRC pixel(768) -> token idx (48x48) ----
                     x_idx, y_idx = pixel_to_patch_idx(
                         kp_src,
-                        stride=PATCH,
-                        grid_hw=(HV, WV),
-                        img_hw=(OUT_H, OUT_W)
+                        stride=self.sd_stride,
+                        grid_hw=self.featmap_size,
+                        img_hw=(out_h, out_w)
                     )
 
-                    # ---- src feature vector ----
-                    src_vec = src_ft[0, :, y_idx, x_idx].view(C, 1, 1)  # [C,1,1]
+                    patch_index_src = int(y_idx) * self.W + int(x_idx)
+                    src_vec = src_desc[0, 0, patch_index_src, :]
 
                     # ---- similarity map in token space (48x48) ----
-                    sim2d = torch.nn.functional.cosine_similarity(trg_ft[0], src_vec, dim=0)  # [48,48]
+                    sim2d = torch.matmul(trg_all, src_vec).view(self.H, self.W)
 
                     # ---- pred token coords (y,x) ----
 
@@ -126,7 +150,7 @@ class DiftEval:
                     )
 
                     # ---- token -> pixel nello spazio 768 (centro patch) ----
-                    x_pred, y_pred = patch_idx_to_pixel((x_tok, y_tok), stride=PATCH)
+                    x_pred, y_pred = patch_idx_to_pixel((x_tok, y_tok), stride=self.sd_stride)
 
                     dx = x_pred - float(kp_trg[0].item())
                     dy = y_pred - float(kp_trg[1].item())

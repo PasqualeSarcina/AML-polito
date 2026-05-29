@@ -28,6 +28,8 @@ def build_parser():
     dift.add_argument("--ensemble-size", type=int, default=4,
                       help="Number of noise ensemble for DIFT feature extraction", required=False)
     dift.add_argument("--timestep", type=int, default=100, required=False, help="Number of diffusion timesteps")
+    dift.add_argument("--use-blip-prompt", action="store_true",
+                      help="Use BLIP image captions as DIFT prompts instead of category prompts")
 
     win_soft_argmax = parser.add_argument_group('win_soft_argmax')
     win_soft_argmax.add_argument('--wsam-win-radius', type=int, default=0, help='Window radius for windowed soft argmax')

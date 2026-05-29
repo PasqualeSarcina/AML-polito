@@ -1,6 +1,4 @@
 import gc
-import subprocess
-from pathlib import Path
 
 import torch
 from diffusers import DDIMScheduler
@@ -11,6 +9,9 @@ from models.dift.OneStepSDPipeline import OneStepSDPipeline
 class SDFeaturizer:
     def __init__(self, sd_id='Manojb/stable-diffusion-2-1-base', device: torch.device = torch.device('cpu')):
         self.device = device
+        self.blip_processor = None
+        self.blip_model = None
+        self.blip_bad_words_ids = None
         unet = CustomUNet2D.from_pretrained(sd_id, subfolder="unet")
         gc.collect()
         onestep_pipe = OneStepSDPipeline.from_pretrained(sd_id, unet=unet, safety_checker=None)
@@ -44,6 +45,85 @@ class SDFeaturizer:
             torch.cuda.empty_cache()
 
             return cat2prompt_embeds
+
+    def load_blip_captioner(self, blip_id: str):
+        if self.blip_model is not None:
+            return
+
+        from transformers import BlipForConditionalGeneration, BlipProcessor
+
+        self.blip_processor = BlipProcessor.from_pretrained(blip_id)
+        self.blip_model = BlipForConditionalGeneration.from_pretrained(blip_id).to(self.device)
+        self.blip_model.eval()
+
+        bad_words = [
+            "arafed",
+            "arafly",
+            "araflane",
+            "araflanes",
+            "araffe",
+            "araffle",
+        ]
+        self.blip_bad_words_ids = [
+            self.blip_processor.tokenizer(word, add_special_tokens=False).input_ids
+            for word in bad_words
+        ]
+
+    @staticmethod
+    def _tensor_to_pil(img_tensor: torch.Tensor):
+        from PIL import Image
+
+        img = img_tensor.detach().float().cpu()
+        if img.ndim == 4:
+            img = img[0]
+
+        if img.min() < 0:
+            img = (img + 1.0) / 2.0
+        elif img.max() > 2:
+            img = img / 255.0
+
+        img = img.clamp(0.0, 1.0)
+        arr = (img.permute(1, 2, 0).numpy() * 255).astype("uint8")
+        return Image.fromarray(arr)
+
+    @torch.no_grad()
+    def generate_blip_caption(self, img_tensor: torch.Tensor, category: str | None = None) -> str:
+        if self.blip_model is None or self.blip_processor is None:
+            raise RuntimeError("BLIP captioner is not loaded. Call load_blip_captioner() first.")
+
+        pil_img = self._tensor_to_pil(img_tensor)
+        if category is not None:
+            prefix = f"a photo of a {category}"
+            inputs = self.blip_processor(
+                images=pil_img,
+                text=prefix,
+                return_tensors="pt"
+            ).to(self.device)
+        else:
+            inputs = self.blip_processor(
+                images=pil_img,
+                return_tensors="pt"
+            ).to(self.device)
+
+        generated_ids = self.blip_model.generate(
+            **inputs,
+            max_new_tokens=20,
+            num_beams=5,
+            do_sample=False,
+            bad_words_ids=self.blip_bad_words_ids,
+            no_repeat_ngram_size=2,
+            repetition_penalty=1.2,
+            early_stopping=True
+        )
+
+        return self.blip_processor.decode(
+            generated_ids[0],
+            skip_special_tokens=True
+        ).strip()
+
+    def encode_blip_prompt(self, img_tensor: torch.Tensor, category: str | None = None):
+        caption = self.generate_blip_caption(img_tensor, category)
+        return self._encode_prompt_embeds(caption), caption
 
     def encode_null_prompt(self):
         with torch.no_grad():

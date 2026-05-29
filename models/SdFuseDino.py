@@ -10,6 +10,7 @@ from data.dataset import get_pckthres
 
 from models.dift import DiftEval
 from models.dift.PreProcess import PreProcess as DiftPreProcess
+from models.dift.pca import _compute_pca as compute_dift_pca
 from models.dinov2 import Dinov2Eval
 from models.dinov2.PreProcess import PreProcess as Dinov2PreProcess
 
@@ -84,83 +85,6 @@ class SdFuseDino:
 
         return sd_src_featmap, sd_trg_featmap, dino_src_featmap, dino_trg_featmap
 
-    def _compute_pca(self, sd_src_featmap, sd_trg_featmap):
-        """
-        co-PCA su 3 scale (s5,s4,s3) e costruzione descriptor SD:
-          - input layer: sd_*_featmap[0/1/2] = (s5/s4/s3)
-          - output: sd_src_desc, sd_trg_desc: [1,1,P, Dsd]
-                   dims_used: [d_s5, d_s4, d_s3] (per slicing/pesi)
-        """
-        dims_used: List[int] = []
-        src_red_list = []
-        trg_red_list = []
-
-        src_layers = [sd_src_featmap[0], sd_src_featmap[1], sd_src_featmap[2]]
-        trg_layers = [sd_trg_featmap[0], sd_trg_featmap[1], sd_trg_featmap[2]]
-
-        for i, out_dim in enumerate(self.PCA_DIMS):
-            fs = src_layers[i]
-            ft = trg_layers[i]
-
-            # -> [1,C,H,W]
-            if fs.ndim == 3:
-                fs = fs.unsqueeze(0)
-            if ft.ndim == 3:
-                ft = ft.unsqueeze(0)
-
-            # rescale a griglia comune (H,W)
-            if fs.shape[-2:] != self.featmap_size:
-                fs = F.interpolate(fs, size=self.featmap_size, mode="bilinear", align_corners=False)
-            if ft.shape[-2:] != self.featmap_size:
-                ft = F.interpolate(ft, size=self.featmap_size, mode="bilinear", align_corners=False)
-
-            _, C, H, W = fs.shape
-            P = H * W
-            q = min(out_dim, C)  # robust
-            dims_used.append(q)
-
-            # [1,C,H,W] -> [P,C]
-            fs_tok = fs.permute(0, 2, 3, 1).reshape(P, C)
-            ft_tok = ft.permute(0, 2, 3, 1).reshape(P, C)
-
-            # co-PCA su [2P,C]
-            X = torch.cat([fs_tok, ft_tok], dim=0)  # [2P,C]
-            mean = X.mean(dim=0, keepdim=True)
-            Xc = (X - mean).float()
-
-            _, _, V = torch.pca_lowrank(Xc, q=q)  # V: [C,q]
-            Z = Xc @ V[:, :q]  # [2P,q]
-
-            Zs = Z[:P, :]
-            Zt = Z[P:, :]
-
-            # -> [1,q,H,W]
-            fs_red = Zs.reshape(1, H, W, q).permute(0, 3, 1, 2).contiguous().to(fs.dtype)
-            ft_red = Zt.reshape(1, H, W, q).permute(0, 3, 1, 2).contiguous().to(ft.dtype)
-
-            src_red_list.append(fs_red)
-            trg_red_list.append(ft_red)
-
-        # concat canale: [1, Dsd, H, W]
-        sd_src_proc = torch.cat(src_red_list, dim=1)
-        sd_trg_proc = torch.cat(trg_red_list, dim=1)
-
-        # -> [1,1,P,Dsd]
-        sd_src_desc = sd_src_proc.reshape(1, -1, self.P).permute(0, 2, 1).unsqueeze(1).contiguous()
-        sd_trg_desc = sd_trg_proc.reshape(1, -1, self.P).permute(0, 2, 1).unsqueeze(1).contiguous()
-
-        # pesi intra-SD (su dims reali)
-        d0, d1, d2 = dims_used
-        sd_src_desc[..., :d0] *= self.WEIGHT[0]
-        sd_src_desc[..., d0:d0 + d1] *= self.WEIGHT[1]
-        sd_src_desc[..., d0 + d1:d0 + d1 + d2] *= self.WEIGHT[2]
-
-        sd_trg_desc[..., :d0] *= self.WEIGHT[0]
-        sd_trg_desc[..., d0:d0 + d1] *= self.WEIGHT[1]
-        sd_trg_desc[..., d0 + d1:d0 + d1 + d2] *= self.WEIGHT[2]
-
-        return sd_src_desc, sd_trg_desc, dims_used
-
     def evaluate(self) -> List[CorrespondenceResult]:
         results: List[CorrespondenceResult] = []
 
@@ -178,7 +102,13 @@ class SdFuseDino:
                 # ------------------------------------------------------------
                 # 2) SD: co-PCA -> descriptor [1,1,P,Dsd]
                 # ------------------------------------------------------------
-                sd_src_desc, sd_trg_desc, dims_used = self._compute_pca(sd_src_featmap, sd_trg_featmap)
+                sd_src_desc, sd_trg_desc, dims_used = compute_dift_pca(
+                    sd_src_featmap,
+                    sd_trg_featmap,
+                    featmap_size=self.featmap_size,
+                    pca_dims=self.PCA_DIMS,
+                    weights=self.WEIGHT[:3],
+                )
                 sd_dim = sum(dims_used)
 
                 # ------------------------------------------------------------
