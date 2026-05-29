@@ -26,7 +26,7 @@ class SdFuseDino:
     def __init__(self, args):
         self.dataset_name = args.dataset
         self.wsam_win_radius = args.wsam_win_radius
-        self.wsam_beta = args.wsam_beta
+        self.wsam_temp = args.wsam_temp
         self.device = args.device
         self.base_dir = args.base_dir
         self.timestep = args.timestep
@@ -249,7 +249,7 @@ class SdFuseDino:
                     y_pred_patch, x_pred_patch = soft_argmax_window(
                         sim2d,
                         window_radius=self.wsam_win_radius,
-                        temperature=self.wsam_beta
+                        temperature=self.wsam_temp
                     )
 
                     x_pred, y_pred = patch_idx_to_pixel((x_pred_patch, y_pred_patch), stride=self.sd_stride)
