@@ -129,8 +129,8 @@ Use the `--help` flag to see all.
 
 The supported models options are: `dinov2`, `dinov3`, `sam`, `dift`.
 
-You can also specify wether to use or not the window soft argmax optimization with the command-line arguments `--wsam-win-radius`
-to set its size and `--wsam-temp` to set its temperature (default value is 0.05)
+You can also specify wether to use or not the window soft argmax optimization with the command-line arguments 
+`--wsam-win-radius` to set its size and `--wsam-temp` to set its temperature (default value is 0.05)
 For example, to evaluate SAM on the SPair-71k dataset with custom weights, run:
 
 ```bash
@@ -141,7 +141,7 @@ When evaluating a model with LoRA adaptation, you can use the `--lora` flag.
 For example, to evaluate SAM on the SPair-71k dataset with custom weights via LoRA, run:
 
 ```bash
-python eval.py --wsam-win-radius 3 sam --lora path/to/lora_custom_weights.pth
+python eval.py --wsam-win-radius 3 sam --lora path/to/lora_folder
 ```
 
 When evaluating dift, you can also choose to fuse the dift features with DINOv2 features using the `--fuse-dino` flag.
