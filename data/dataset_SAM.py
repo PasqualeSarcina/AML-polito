@@ -87,9 +87,8 @@ def read_img(path):
     return torch.from_numpy(img).permute(2,0,1)
 
 class SPairDataset(Dataset):
-    def __init__(self, pair_ann_path, layout_path, image_path, dataset_size, pck_alpha, datatype):
+    def __init__(self, pair_ann_path, layout_path, image_path, dataset_size, datatype):
         self.datatype = datatype
-        self.pck_alpha = pck_alpha
         self.pair_ann_path = pair_ann_path
         self.image_path = image_path
         self.max_kps = 50

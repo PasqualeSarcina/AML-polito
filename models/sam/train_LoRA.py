@@ -150,7 +150,7 @@ if __name__ == "__main__":
     NUM_WORKERS = 4
     train_dataset = SPairDataset(
         pair_ann_path, layout_path, image_path,
-        dataset_size='large', pck_alpha=0.1, datatype='trn')
+        dataset_size='large', datatype='trn')
 
     train_dataloader = DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True,
@@ -158,7 +158,7 @@ if __name__ == "__main__":
 
     val_dataset = SPairDataset(
         pair_ann_path, layout_path, image_path,
-        dataset_size='large', pck_alpha=0.1, datatype='val')
+        dataset_size='large', datatype='val')
 
     val_dataloader = DataLoader(
         val_dataset, batch_size=BATCH_SIZE, shuffle=False,

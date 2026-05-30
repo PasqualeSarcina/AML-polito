@@ -16,6 +16,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from utils.loss import InfoNCELoss
 from utils.utils_download import download
+from data.dataset_downloader import download_spair
 from data.dataset_SAM import SPairDataset
 
 def seed_everything(seed=42):
@@ -138,7 +139,7 @@ if __name__ == "__main__":
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     
     dataset_root = 'dataset/SPair-71k'
-    #checkpoint_dir = 'checkpoints'
+
     checkpoint_dir = Path('checkpoints')
     sam_checkpoint = checkpoint_dir / "sam_vit_b_01ec64.pth"
     if not sam_checkpoint.exists():
@@ -151,10 +152,10 @@ if __name__ == "__main__":
     layout_path = os.path.join(dataset_root, 'Layout')
     image_path = os.path.join(dataset_root, 'JPEGImages')
     
-    train_dataset = SPairDataset(pair_ann_path, layout_path, image_path, dataset_size='large', pck_alpha=0.1, datatype='trn')
+    train_dataset = SPairDataset(pair_ann_path, layout_path, image_path, dataset_size='large', datatype='trn')
     train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True, num_workers=4)
 
-    val_dataset = SPairDataset(pair_ann_path, layout_path, image_path, dataset_size='large', pck_alpha=0.1, datatype='val')
+    val_dataset = SPairDataset(pair_ann_path, layout_path, image_path, dataset_size='large', datatype='val')
     val_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=4)
 
     n_layers = args.n_layers
