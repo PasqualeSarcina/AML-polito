@@ -1,3 +1,4 @@
+from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -15,8 +16,8 @@ from segment_anything import sam_model_registry
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from utils.loss import InfoNCELoss
+from utils.utils_download import download
 from data.dataset_SAM import SPairDataset
-from utils.common import download_sam_model
     
 def seed_everything(seed=42):
     random.seed(seed)
@@ -110,19 +111,16 @@ def lora_training(model, train_loader, val_loader, device, epochs, lr, wd, accum
 
         avg_val_loss = val_loss / len(val_loader)
 
-        print(f"\nEPOCA {epoch+1} COMPLETATA:")
+        print(f"\nEpoch {epoch+1} completed:")
         print(f"Training Loss:   {avg_train_loss:.4f}")
         print(f"Validation Loss: {avg_val_loss:.4f}")
 
-        # Logica di salvataggio
-        # 1. Salva il modello corrente
-        epoch_save_path = os.path.join(lora_path, f'epoch_{epoch+1}')
-        model.image_encoder.save_pretrained(epoch_save_path)
+        #epoch_save_path = os.path.join(lora_path, f'epoch_{epoch+1}')
+        #model.image_encoder.save_pretrained(epoch_save_path)
 
-        # 2. Salva SE è il migliore finora
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            best_save_path = os.path.join(lora_path, 'best_model')
+            best_save_path = os.path.join(lora_path, 'best_sam_lora')
             model.image_encoder.save_pretrained(best_save_path)
             print(f"Salvato: {best_save_path}")
 
@@ -143,7 +141,10 @@ if __name__ == "__main__":
     pair_ann_path = os.path.join(dataset_root, 'PairAnnotation')
     layout_path = os.path.join(dataset_root, 'Layout')
     image_path = os.path.join(dataset_root, 'JPEGImages')
-    checkpoint_dir = 'checkpoints'
+ 
+    sam_checkpoint = Path('checkpoints') / "sam_vit_b_01ec64.pth"
+    if not sam_checkpoint.exists():
+        download("https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth", sam_checkpoint)
 
     BATCH_SIZE = 1
     NUM_WORKERS = 4
@@ -163,8 +164,7 @@ if __name__ == "__main__":
         val_dataset, batch_size=BATCH_SIZE, shuffle=False,
         num_workers=NUM_WORKERS, persistent_workers=True, pin_memory=True)
     
-    ckpt_path = download_sam_model(checkpoint_dir)
-    sam_model_lora = sam_model_registry["vit_b"](checkpoint=ckpt_path)
+    sam_model_lora = sam_model_registry["vit_b"](checkpoint=sam_checkpoint)
     sam_model_lora = setup_lora_sam(sam_model_lora)
     sam_model_lora.to(device)
 
