@@ -52,14 +52,15 @@ We focus on the following models:
 
 - `checkpoints/`: Contains pre-trained and finetuned model checkpoints. Pretrained model are automatically downloaded,
   except for DINOv3 due to licensing restrictions.
-- `models/`: Contains implementations of the code
 - `data/`: Contains datasets used for training and evaluation. Dataset are automatically downloaded and pre-processed.
   The included dataset are:
     * SPair-71k
     * PF-PASCAL
     * PF-WILLOW
     * AP-10K
-- `datasets/`: Dayaset will be stored here after downloading.
+- `datasets/`: Dataset will be stored here after downloading.
+- `models/`: Contains implementations of the code
+- `results/`: Contains results on semantic correspondence tasks and training configurations details
 - `utils/`: Utility functions for data processing, evaluation, and visualization.
 - `eval.py`: Script for evaluating models on semantic correspondence tasks.
 
@@ -95,6 +96,18 @@ python models/dinov2/train.py --epochs 5 --lr 1e-4 --w_decay 1e-2 --n_layers 1 -
 **LoRA Fine-Tuning**
 ```bash
 python models/dinov2/train_LoRA.py --epochs 5 --lr 1e-4 --w_decay 1e-2 --accumulation_steps 8 
+```
+
+### Fine-Tuning SAM
+
+**Standard Fine-Tuning**
+```bash
+python models/sam/train.py --epochs 5 --lr 1e-5 --w_decay 1e-2 --n_layers 3 --accumulation_steps 8
+```
+
+**LoRA Fine-Tuning**
+```bash
+python models/sam/train_LoRA.py --epochs 5 --lr 1e-4 --w_decay 1e-2 --accumulation_steps 8 
 ```
 
 ## Evaluation
