@@ -91,7 +91,7 @@ python models/dinov2/train.py --epochs 5 --lr 1e-4 --w_decay 1e-2 --n_layers 1 -
 
 **LoRA Fine-Tuning**
 ```bash
-python models/dinov2/train_LoRA.py --epochs 5 --lr 1e-4 --w_decay 1e-2 --accumulation_steps 8 
+python models/dinov2/train_LoRA.py --epochs 5 --lr 1e-4 --w_decay 1e-2 --accumulation_steps 8  --lora_r 16 --lora_alpha 32  --lora_dropout 0.1
 ```
 
 ### Fine-Tuning SAM

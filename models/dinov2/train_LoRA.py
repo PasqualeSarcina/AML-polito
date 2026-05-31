@@ -63,16 +63,17 @@ def seed_everything(seed=42):
     torch.backends.cudnn.deterministic = True
     print(f">>> SEED SET TO {seed} <<<")
 
-def fine_tuning(epochs, lr, w_decay, accumulation_steps=8):
+def fine_tuning(epochs, lr, w_decay, accumulation_steps=8, lora_r=16, lora_alpha=32, lora_dropout=0.1):
     seed_everything(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14').to(device)
   
+    # Use the passed arguments here
     lora_config = LoraConfig(
-        r=16,                  
-        lora_alpha=32,          
-        target_modules=["qkv"], # layer 'qkv' per l'attenzione
-        lora_dropout=0.1,      
+        r=lora_r,                  
+        lora_alpha=lora_alpha,          
+        target_modules=["qkv"], 
+        lora_dropout=lora_dropout,      
         bias="none"
     )
 
@@ -177,8 +178,7 @@ def fine_tuning(epochs, lr, w_decay, accumulation_steps=8):
             print(f"Epoch [{epoch+1}/{num_epochs}] Avg Validation Loss: {avg_val_loss:.4f}")
             if avg_val_loss < best_val_loss:
                 best_val_loss=avg_val_loss
-                os.makedirs("checkpoints", exist_ok=True)
-                # Save the weights
+                os.makedirs("checkpoints_LoRA", exist_ok=True)
                 model.save_pretrained("checkpoints_LoRA/best_model")
                 print(f"--> New Best Model Saved! (Loss: {best_val_loss:.4f})")
 
@@ -188,13 +188,19 @@ if __name__ == '__main__':
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--w_decay", type=float, default=1e-2, help="Weight decay")
     parser.add_argument("--accumulation_steps", type=int, default=8, help="Gradient accumulation steps")
+    parser.add_argument("--lora_r", type=int, default=16, help="Rank of the LoRA update matrices")
+    parser.add_argument("--lora_alpha", type=int, default=32, help="LoRA scaling factor")
+    parser.add_argument("--lora_dropout", type=float, default=0.1, help="LoRA dropout probability")
     args = parser.parse_args()
     
     fine_tuning(
         epochs=args.epochs,
         lr=args.lr,
         w_decay=args.w_decay,
-        accumulation_steps=args.accumulation_steps
+        accumulation_steps=args.accumulation_steps,
+        lora_r=args.lora_r,            
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout
     )
 
 
