@@ -103,7 +103,7 @@ python models/sam/train.py --epochs 5 --lr 1e-5 --w_decay 1e-2 --n_layers 3 --ac
 
 **LoRA Fine-Tuning**
 ```bash
-python models/sam/train_LoRA.py --epochs 5 --lr 1e-4 --w_decay 1e-2 --accumulation_steps 8 
+python models/sam/train_LoRA.py --epochs 5 --lr 1e-4 --w_decay 1e-2 --accumulation_steps 8 --lora_r 16 --lora_alpha 32  --lora_dropout 0.1 
 ```
 
 ## Evaluation

@@ -29,15 +29,15 @@ def seed_everything(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False 
 
-def setup_lora_sam(model, r=16):
+def setup_lora_sam(model, r, alpha, dropout):
     for param in model.parameters():
         param.requires_grad = False
 
     config = LoraConfig(
         r=r,
-        lora_alpha=2*r,
+        lora_alpha=alpha,
         target_modules=["qkv"], 
-        lora_dropout=0.1,
+        lora_dropout=dropout,
         bias="none"
     )
 
@@ -115,9 +115,6 @@ def lora_training(model, train_loader, val_loader, device, epochs, lr, wd, accum
         print(f"Training Loss:   {avg_train_loss:.4f}")
         print(f"Validation Loss: {avg_val_loss:.4f}")
 
-        #epoch_save_path = os.path.join(lora_path, f'epoch_{epoch+1}')
-        #model.image_encoder.save_pretrained(epoch_save_path)
-
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             best_save_path = os.path.join(lora_path, 'best_sam_lora')
@@ -132,7 +129,11 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--w_decay", type=float, default=1e-2, help="Weight decay")
     parser.add_argument("--accumulation_steps", type=int, default=8, help="Gradient accumulation steps")
+    parser.add_argument("--lora_r", type=int, default=16, help="Rank of the LoRA update matrices")
+    parser.add_argument("--lora_alpha", type=int, default=32, help="LoRA scaling factor")
+    parser.add_argument("--lora_dropout", type=float, default=0.1, help="LoRA dropout probability")
     args = parser.parse_args()
+
     seed_everything(42)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -165,7 +166,7 @@ if __name__ == "__main__":
         num_workers=NUM_WORKERS, persistent_workers=True, pin_memory=True)
     
     sam_model_lora = sam_model_registry["vit_b"](checkpoint=sam_checkpoint)
-    sam_model_lora = setup_lora_sam(sam_model_lora)
+    sam_model_lora = setup_lora_sam(sam_model_lora, r=args.lora_r, alpha=args.lora_alpha, dropout=args.lora_dropout)
     sam_model_lora.to(device)
 
     lora_training(sam_model_lora, train_dataloader, val_dataloader, device,
