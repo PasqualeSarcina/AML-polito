@@ -8,7 +8,6 @@ Common evaluation setup:
 - Backbone: DINOv3 ViT-B/16
 - Input resolution: 512 × 512
 - Patch size: 16
-- Main selection metric: PCK@0.10 at keypoint level
 
 ## Overall Results
 
