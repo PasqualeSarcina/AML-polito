@@ -1,3 +1,11 @@
+## Authors
+
+- [Nicolò Sanna](https://github.com/Nicolo99-sys)
+- [Alexandra Elena Holota](https://github.com/AlexandraElena-Holota)
+- [Pasquale Sarcina](https://github.com/PasqualeSarcina)
+- [Antonella Sarcuni](https://github.com/s334047)
+
+
 ## DINOv3 setup
 
 This project uses **DINOv3** as one of the backbones for semantic correspondence.
@@ -143,6 +151,7 @@ python eval.py --wsam-win-radius 3 sam --lora path/to/lora_folder
 When evaluating dift, you can also choose to fuse the dift features with DINOv2 features using the `--fuse-dino` flag.
 To use custom dino weights when fusing, use the `--custom-weights` argument.
 To improve inference time, you can reduce the number of ensemble steps with the `---ensemble-size` argument (default is 4).
+
 
 
 
