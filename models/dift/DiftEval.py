@@ -70,7 +70,7 @@ class DiftEval:
                 print(f"BLIP prompt for {img_name}: {caption}")
             prompt_embed = self.blip_prompt_embeds[prompt_key]
         else:
-            prompt_embed = self.prompt_embeds[category_opt]  # (1,77,dim)
+            prompt_embed = self.prompt_embeds[category_opt]
 
         unet_ft = self.featurizer.forward(
             img_tensor=img_tensor,
@@ -78,7 +78,7 @@ class DiftEval:
             ensemble_size=self.enseble_size,
             up_ft_index=up_ft_index,
             t=self.timestep
-        )  # (1,c,h,w)
+        )
         save_featuremap(unet_ft, img_name, self.feat_dir)
         self.processed_img[category_opt].add(img_name)
         return unet_ft
@@ -112,7 +112,7 @@ class DiftEval:
                 src_desc = F.normalize(src_desc, p=2, dim=-1, eps=1e-6)
                 trg_desc = F.normalize(trg_desc, p=2, dim=-1, eps=1e-6)
 
-                # keypoints già nello spazio 768×768
+                # keypoints resized 768×768
                 src_kps = batch["src_kps"].to(self.device)  # (N,2) in 768
                 trg_kps = batch["trg_kps"].to(self.device)  # (N,2) in 768
 
@@ -149,7 +149,7 @@ class DiftEval:
                         temperature=self.wsam_temp
                     )
 
-                    # ---- token -> pixel nello spazio 768 (centro patch) ----
+                    # ---- token -> pixel in 768 (patch center) ----
                     x_pred, y_pred = patch_idx_to_pixel((x_tok, y_tok), stride=self.sd_stride)
 
                     dx = x_pred - float(kp_trg[0].item())

@@ -33,6 +33,8 @@ class PreProcess(object):
             sy, sx = h_out / h, w_out / w
 
             resized_img = (transforms.Resize((h_out, w_out))(img) / 255.0 - 0.5) * 2.0
+
+            # Replicate the image along the batch dimension
             sample[f'{key}_img'] = resized_img.unsqueeze(0).repeat(self.ensemble_size, 1, 1, 1)
 
             sample[f'{key}_kps'] = self._resize_points(sample[f'{key}_kps'], sy, sx)

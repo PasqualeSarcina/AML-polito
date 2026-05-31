@@ -182,6 +182,8 @@ class SDFeaturizer:
         fts = {}
         for idx in up_ft_index:
             ft = unet_ft_all['up_ft'][idx]  # [ensem, C, H, W]
+
+            # average over the ensemble dimension
             ft = ft.mean(0, keepdim=True)  # [1, C, H, W]
             fts[idx] = ft
         if len(up_ft_index) == 1:

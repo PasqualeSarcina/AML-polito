@@ -76,11 +76,7 @@ pip install -r requirements.txt
 
 ## Dataset Preparation
 
-The datasets are automatically downloaded and pre-processed the first time you run an evaluation or training script. Once downloaded, everything is placed inside the `dataset/` directory. If you prefer to download them manually beforehand, you can simply run:
-
-```bash
-python utils/download_data.py
-```
+The datasets are automatically downloaded and pre-processed the first time you run an evaluation or training script. Once downloaded, everything is placed inside the `dataset/` directory.
 
 ## Training
 
