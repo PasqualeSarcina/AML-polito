@@ -10,7 +10,6 @@ def _compute_pca(
     sd_trg_featmap,
     featmap_size: tuple[int, int],
     pca_dims: Sequence[int],
-    weights: Sequence[float],
 ):
 
     dims_used: List[int] = []
@@ -84,15 +83,5 @@ def _compute_pca(
     # Convert feature maps into descriptor tensors [1, 1, num_patches, C_total]
     sd_src_desc = sd_src_proc.reshape(1, -1, num_patches).permute(0, 2, 1).unsqueeze(1).contiguous()
     sd_trg_desc = sd_trg_proc.reshape(1, -1, num_patches).permute(0, 2, 1).unsqueeze(1).contiguous()
-
-    # Apply layer-wise weights to the corresponding descriptor blocks.
-    d0, d1, d2 = dims_used
-    sd_src_desc[..., :d0] *= weights[0]
-    sd_src_desc[..., d0:d0 + d1] *= weights[1]
-    sd_src_desc[..., d0 + d1:d0 + d1 + d2] *= weights[2]
-
-    sd_trg_desc[..., :d0] *= weights[0]
-    sd_trg_desc[..., d0:d0 + d1] *= weights[1]
-    sd_trg_desc[..., d0 + d1:d0 + d1 + d2] *= weights[2]
 
     return sd_src_desc, sd_trg_desc, dims_used

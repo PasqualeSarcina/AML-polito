@@ -21,8 +21,7 @@ from utils.utils_results import CorrespondenceResult
 
 
 class SdFuseDino:
-    PCA_DIMS = [256, 256, 256]  # s5,s4,s3
-    WEIGHT = [1, 1, 1, 1, 1]  # [w_s5,w_s4,w_s3,w_sd,w_dino]
+    PCA_DIMS = [256, 256, 256]
 
     def __init__(self, args):
         self.dataset_name = args.dataset
@@ -106,8 +105,7 @@ class SdFuseDino:
                     sd_src_featmap,
                     sd_trg_featmap,
                     featmap_size=self.featmap_size,
-                    pca_dims=self.PCA_DIMS,
-                    weights=self.WEIGHT[:3],
+                    pca_dims=self.PCA_DIMS
                 )
                 sd_dim = sum(dims_used)
 
@@ -137,11 +135,6 @@ class SdFuseDino:
 
                 fuse_src_desc = torch.cat((sd_src_desc, dino_src_desc), dim=-1)
                 fuse_trg_desc = torch.cat((sd_trg_desc, dino_trg_desc), dim=-1)
-
-                fuse_src_desc[..., :sd_dim] *= self.WEIGHT[3]
-                fuse_src_desc[..., sd_dim:] *= self.WEIGHT[4]
-                fuse_trg_desc[..., :sd_dim] *= self.WEIGHT[3]
-                fuse_trg_desc[..., sd_dim:] *= self.WEIGHT[4]
 
                 # ------------------------------------------------------------
                 # 5) Keypoints + similarity map (48x48) -> pred

@@ -17,7 +17,6 @@ from utils.utils_results import CorrespondenceResult
 
 class DiftEval:
     PCA_DIMS = [256, 256, 256]  # s5,s4,s3
-    WEIGHT = [1, 1, 1]  # [w_s5,w_s4,w_s3]
 
     def __init__(self, args):
         self.dataset_name = args.dataset
@@ -106,8 +105,7 @@ class DiftEval:
                     src_ft,
                     trg_ft,
                     featmap_size=self.featmap_size,
-                    pca_dims=self.PCA_DIMS,
-                    weights=self.WEIGHT,
+                    pca_dims=self.PCA_DIMS
                 )
                 src_desc = F.normalize(src_desc, p=2, dim=-1, eps=1e-6)
                 trg_desc = F.normalize(trg_desc, p=2, dim=-1, eps=1e-6)
