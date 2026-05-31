@@ -121,9 +121,6 @@ class SdFuseDino:
                 fuse_src_desc = torch.cat((sd_src_desc, dino_src_desc), dim=-1)
                 fuse_trg_desc = torch.cat((sd_trg_desc, dino_trg_desc), dim=-1)
 
-                # ------------------------------------------------------------
-                # 5) Keypoints + similarity map (48x48) -> pred
-                # ------------------------------------------------------------
                 sd_batch = self.sd_preproc(deepcopy(batch))
                 src_kps = sd_batch["src_kps"].to(self.device)  # (N,2)
                 trg_kps = sd_batch["trg_kps"].to(self.device)  # (N,2)
