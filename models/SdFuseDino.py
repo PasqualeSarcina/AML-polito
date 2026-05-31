@@ -31,7 +31,7 @@ class SdFuseDino:
         self.base_dir = args.base_dir
         self.timestep = args.timestep
         self.enseble_size = args.ensemble_size
-
+        args.lora = False
         self.sd = DiftEval(args)
         self.dino = Dinov2Eval(args)
 
