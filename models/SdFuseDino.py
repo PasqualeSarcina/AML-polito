@@ -50,9 +50,6 @@ class SdFuseDino:
                                                         transform=None)
 
     def _compute_features(self, batch: dict):
-        # ----------------------------
-        # SD
-        # ----------------------------
         sd_batch = self.sd_preproc(deepcopy(batch))
         sd_src_featmap = self.sd.compute_features(
             sd_batch["src_img"], sd_batch["src_imname"], sd_batch["category"], up_ft_index=[0, 1, 2], t=self.timestep
@@ -61,9 +58,6 @@ class SdFuseDino:
             sd_batch["trg_img"], sd_batch["trg_imname"], sd_batch["category"], up_ft_index=[0, 1, 2], t=self.timestep
         )
 
-        # ----------------------------
-        # DINO
-        # ----------------------------
         dino_batch = self.dino_preproc(deepcopy(batch))
         dino_src_tokens = self.dino.compute_features(
             dino_batch["src_img"], dino_batch["src_imname"], dino_batch["category"]
@@ -72,13 +66,13 @@ class SdFuseDino:
             dino_batch["trg_img"], dino_batch["trg_imname"], dino_batch["category"]
         )
 
-        # rimuovi CLS se presente: [1, 1+P, C] -> [1, P, C]
+        # remove CLS
         if dino_src_tokens.ndim == 3 and dino_src_tokens.shape[1] == 1 + self.P:
             dino_src_tokens = dino_src_tokens[:, 1:, :]
         if dino_trg_tokens.ndim == 3 and dino_trg_tokens.shape[1] == 1 + self.P:
             dino_trg_tokens = dino_trg_tokens[:, 1:, :]
 
-        # [1,P,C] -> [1,C,H,W]
+        # [1,P,C] -> [1,C,H,W] reshaped as a feature map
         dino_src_featmap = dino_src_tokens.permute(0, 2, 1).reshape(1, dino_src_tokens.shape[2], self.H, self.W)
         dino_trg_featmap = dino_trg_tokens.permute(0, 2, 1).reshape(1, dino_trg_tokens.shape[2], self.H, self.W)
 
@@ -93,14 +87,10 @@ class SdFuseDino:
                     total=len(self.dataloader),
                     desc=f"DIFT + DINOv2 Eval on {self.dataset_name}",
             ):
-                # ------------------------------------------------------------
-                # 1) Features
-                # ------------------------------------------------------------
+
                 sd_src_featmap, sd_trg_featmap, dino_src_featmap, dino_trg_featmap = self._compute_features(batch)
 
-                # ------------------------------------------------------------
-                # 2) SD: co-PCA -> descriptor [1,1,P,Dsd]
-                # ------------------------------------------------------------
+                # Apply PCA and get [1, 1, num_patches, C_total]
                 sd_src_desc, sd_trg_desc, dims_used = compute_dift_pca(
                     sd_src_featmap,
                     sd_trg_featmap,
@@ -109,9 +99,7 @@ class SdFuseDino:
                 )
                 sd_dim = sum(dims_used)
 
-                # ------------------------------------------------------------
-                # 3) DINO: featmap -> descriptor [1,1,P,Ddino]
-                # ------------------------------------------------------------
+                # Transform DINO in the same shape
                 if dino_src_featmap.shape[-2:] != self.featmap_size:
                     dino_src_featmap = F.interpolate(
                         dino_src_featmap, size=self.featmap_size, mode="bilinear", align_corners=False
@@ -123,16 +111,13 @@ class SdFuseDino:
                 dino_src_desc = dino_src_featmap.permute(0, 2, 3, 1).reshape(1, 1, self.P, -1).contiguous()
                 dino_trg_desc = dino_trg_featmap.permute(0, 2, 3, 1).reshape(1, 1, self.P, -1).contiguous()
 
-                # ------------------------------------------------------------
-                # 4) SOLO L2:
-                #    - L2 normalize SEMPRE (repo-like quando usa l2)
-                #    - similarity = -||x - y||^2
-                # ------------------------------------------------------------
+                # Apply L2
                 sd_src_desc = F.normalize(sd_src_desc, p=2, dim=-1, eps=1e-6)
                 sd_trg_desc = F.normalize(sd_trg_desc, p=2, dim=-1, eps=1e-6)
                 dino_src_desc = F.normalize(dino_src_desc, p=2, dim=-1, eps=1e-6)
                 dino_trg_desc = F.normalize(dino_trg_desc, p=2, dim=-1, eps=1e-6)
 
+                # Stack the 2 featuremaps
                 fuse_src_desc = torch.cat((sd_src_desc, dino_src_desc), dim=-1)
                 fuse_trg_desc = torch.cat((sd_trg_desc, dino_trg_desc), dim=-1)
 
@@ -143,7 +128,8 @@ class SdFuseDino:
                 src_kps = sd_batch["src_kps"].to(self.device)  # (N,2)
                 trg_kps = sd_batch["trg_kps"].to(self.device)  # (N,2)
 
-                trg_all = fuse_trg_desc[0, 0, :, :]  # [P,D]
+                # Extract only the featuremap (without batch)
+                trg_all = fuse_trg_desc[0, 0, :, :]  # [num_patches, C_total]
                 distances_this_image: List[float] = []
 
                 for i in range(src_kps.shape[0]):
@@ -164,10 +150,8 @@ class SdFuseDino:
 
                     src_vec = fuse_src_desc[0, 0, patch_index_src, :]  # [D]
 
-                    # SOLO L2: sim = -||x-y||^2
-                    diff = trg_all - src_vec.unsqueeze(0)  # [P,D]
-                    sim_1d = -(diff * diff).sum(dim=-1)  # [P]
-                    sim2d = sim_1d.view(self.H, self.W)  # [H,W]
+                    sim_1d = F.cosine_similarity(trg_all, src_vec.unsqueeze(0), dim=-1)
+                    sim2d = sim_1d.view(self.H, self.W)
 
                     y_pred_patch, x_pred_patch = soft_argmax_window(
                         sim2d,

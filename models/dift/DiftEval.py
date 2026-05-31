@@ -137,7 +137,11 @@ class DiftEval:
                     src_vec = src_desc[0, 0, patch_index_src, :]
 
                     # ---- similarity map in token space (48x48) ----
-                    sim2d = torch.matmul(trg_all, src_vec).view(self.H, self.W)
+                    sim2d = F.cosine_similarity(
+                        trg_all,
+                        src_vec.unsqueeze(0),
+                        dim=-1
+                    ).view(self.H, self.W)
 
                     # ---- pred token coords (y,x) ----
 
