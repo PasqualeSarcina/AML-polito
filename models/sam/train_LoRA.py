@@ -17,6 +17,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from utils.loss import InfoNCELoss
 from utils.utils_download import download
+from utils.download_data import download_spair71k
 from data.dataset_SAM import SPairDataset
     
 def seed_everything(seed=42):
@@ -139,14 +140,17 @@ if __name__ == "__main__":
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     
     dataset_root = 'dataset/SPair-71k'
-    pair_ann_path = os.path.join(dataset_root, 'PairAnnotation')
-    layout_path = os.path.join(dataset_root, 'Layout')
-    image_path = os.path.join(dataset_root, 'JPEGImages')
- 
+    if not os.path.exists(dataset_root):
+        download_spair71k()
+
     sam_checkpoint = Path('checkpoints') / "sam_vit_b_01ec64.pth"
     if not sam_checkpoint.exists():
         download("https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth", sam_checkpoint)
 
+    pair_ann_path = os.path.join(dataset_root, 'PairAnnotation')
+    layout_path = os.path.join(dataset_root, 'Layout')
+    image_path = os.path.join(dataset_root, 'JPEGImages')
+ 
     BATCH_SIZE = 1
     NUM_WORKERS = 4
     train_dataset = SPairDataset(

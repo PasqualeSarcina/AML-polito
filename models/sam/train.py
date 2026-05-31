@@ -16,7 +16,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from utils.loss import InfoNCELoss
 from utils.utils_download import download
-from data.dataset_downloader import download_spair
+from utils.download_data import download_spair71k
 from data.dataset_SAM import SPairDataset
 
 def seed_everything(seed=42):
@@ -139,6 +139,8 @@ if __name__ == "__main__":
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     
     dataset_root = 'dataset/SPair-71k'
+    if not os.path.exists(dataset_root):
+        download_spair71k()
 
     checkpoint_dir = Path('checkpoints')
     sam_checkpoint = checkpoint_dir / "sam_vit_b_01ec64.pth"
