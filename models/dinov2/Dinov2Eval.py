@@ -1,8 +1,10 @@
 import math
+import os
 from collections import defaultdict
 from pathlib import Path
 
 import torch
+from peft import PeftModel
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from data.ap10k import AP10KDataset
@@ -25,6 +27,7 @@ class Dinov2Eval:
         self.wsam_temp = args.wsam_temp
         self.device = args.device
         self.base_dir = args.base_dir
+        self.lora = args.lora
 
         self._init_model()
 
@@ -47,6 +50,10 @@ class Dinov2Eval:
 
             # Load weights into the model
             model.load_state_dict(new_state_dict, strict=False)
+
+        if self.lora:
+            assert os.path.exists(self.lora), "lora checkpoint not found at {}".format(self.lora)
+            model = PeftModel.from_pretrained(model, self.lora)
 
         self.model = model.to(self.device).eval()
 

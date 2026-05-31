@@ -14,9 +14,11 @@ def build_parser():
     model = parser.add_subparsers(dest='model', required=True)
     dinov2 = model.add_parser("dinov2")
     dinov2.add_argument("--custom-weights", type=str, required=False, help="path to custom weights")
+    dinov2.add_argument("--lora", type=str, required=False, help="path to LoRA weights")
 
     dinov3 = model.add_parser("dinov3")
     dinov3.add_argument("--custom-weights", type=str, required=False, help="path to custom weights")
+    dinov3.add_argument("--lora", type=str, required=False, help="path to LoRA weights")
 
     sam = model.add_parser("sam")
     sam.add_argument("--custom-weights", type=str, required=False, help="path to custom weights")

@@ -27,7 +27,7 @@ class DiftEval:
         self.enseble_size = args.ensemble_size
         self.timestep = args.timestep
         self.use_blip_prompt = getattr(args, "use_blip_prompt", False)
-        self.blip_model_id = "Salesforce/blip-image-captioning-base"
+        self.blip_model_id = "Salesforce/blip-image-captioning-large"
 
         self.featurizer = SDFeaturizer(device=self.device)
 

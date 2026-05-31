@@ -1,9 +1,11 @@
 import math
+import os
 from collections import defaultdict
 from pathlib import Path
 
 import torch
 import torch.nn.functional as F
+from peft import PeftModel
 from tqdm import tqdm
 
 from models.dinov3.PreProcess import PreProcess
@@ -33,6 +35,7 @@ class Dinov3Eval:
         """
         self.dataset_name = args.dataset
         self.custom_weights = args.custom_weights
+        self.lora = args.lora
 
         self.wsam_win_radius = int(getattr(args, "wsam_win_radius", 0))
         self.wsam_temp = float(getattr(args, "wsam_temp", 0.05))
@@ -49,6 +52,7 @@ class Dinov3Eval:
 
         self.patch_size = 16
         self.input_size = 512
+
 
         self._init_model()
 
@@ -131,6 +135,10 @@ class Dinov3Eval:
             print(msg.missing_keys)
             print(f"Unexpected keys: {len(msg.unexpected_keys)}")
             print(msg.unexpected_keys)
+
+        if self.lora:
+            assert os.path.exists(self.lora), "lora checkpoint not found at {}".format(self.lora)
+            model = PeftModel.from_pretrained(model, self.lora)
 
         self.model = model.to(self.device).eval()
 
